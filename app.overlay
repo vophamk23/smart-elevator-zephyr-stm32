@@ -1,0 +1,274 @@
+/*
+ * Devicetree Overlay for HCMUT BKIT ARM4 (STM32F407ZGT6)
+ * Base board target: stm32f4_disco
+ * Pinout verified strictly against KitThiNghiem_STM32_ARM4_QuickStartGuide_20231027_1027.pdf
+ */
+
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
+
+/ {
+	model = "HCMUT BKIT ARM4 Smart Elevator Controller";
+	compatible = "st,stm32f407g-disc1";
+
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
+		zephyr,canbus = &can1;
+	};
+
+	aliases {
+		/delete-property/ led3;
+		led0 = &bkit_led_debug;
+		led1 = &bkit_out_y0;
+		led2 = &bkit_out_y1;
+		sw0 = &bkit_in_x0;
+		sw1 = &bkit_in_x1;
+		sw2 = &bkit_in_x2;
+		sw3 = &bkit_in_x3;
+		watchdog0 = &iwdg;
+		eeprom-0 = &at24_eeprom;
+		pwm-buzzer = &bkit_buzzer;
+	};
+
+	bkit_outputs {
+		compatible = "gpio-leds";
+
+		bkit_led_debug: led_pe4 {
+			gpios = <&gpioe 4 GPIO_ACTIVE_HIGH>;
+			label = "LED3_PE4_DEBUG";
+		};
+
+		bkit_out_y0: out_y0_pe5 {
+			gpios = <&gpioe 5 GPIO_ACTIVE_HIGH>;
+			label = "OPTO_OUT_Y0_MOTOR_UP";
+		};
+
+		bkit_out_y1: out_y1_pe6 {
+			gpios = <&gpioe 6 GPIO_ACTIVE_HIGH>;
+			label = "OPTO_OUT_Y1_MOTOR_DOWN";
+		};
+	};
+
+	bkit_inputs {
+		compatible = "gpio-keys";
+
+		bkit_in_x0: in_x0_pa6 {
+			gpios = <&gpioa 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "OPTO_IN_X0_DOOR_OBSTRUCT";
+		};
+
+		bkit_in_x1: in_x1_pa7 {
+			gpios = <&gpioa 7 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "OPTO_IN_X1_ESTOP";
+		};
+
+		bkit_in_x2: in_x2_pc4 {
+			gpios = <&gpioc 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "OPTO_IN_X2_FLOOR_SENSOR";
+		};
+
+		bkit_in_x3: in_x3_pc5 {
+			gpios = <&gpioc 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "OPTO_IN_X3_OVERLOAD";
+		};
+	};
+
+	bkit_pwmleds {
+		status = "okay";
+		compatible = "pwm-leds";
+
+		bkit_buzzer: buzzer_pf8 {
+			pwms = <&pwm13 1 PWM_HZ(2000) PWM_POLARITY_NORMAL>;
+			label = "BKIT_BUZZER_PF8";
+		};
+	};
+
+	/* Disable conflicting stm32f4_disco board-level LEDs & user button */
+	leds {
+		status = "disabled";
+	};
+
+	gpio_keys {
+		status = "disabled";
+	};
+
+	zephyr,user {
+		io-channels = <&adc1 12>, /* PC2: LM35 temperature sensor */
+			      <&adc1 11>, /* PC1: Potentiometer (load/temp sim) */
+			      <&adc1 10>, /* PC0: Light sensor */
+			      <&adc1 8>,  /* PB0: Bus voltage monitor */
+			      <&adc1 9>;  /* PB1: Motor current monitor */
+		ld-latch-gpios = <&gpiog 6 GPIO_ACTIVE_HIGH>;
+		btn-load-gpios = <&gpiod 3 GPIO_ACTIVE_HIGH>;
+		w25q-cs-gpios  = <&gpiob 12 GPIO_ACTIVE_LOW>;
+	};
+};
+
+/* --- Disable conflicting stm32f4_disco onboard devices --- */
+&pwmleds {
+	status = "disabled";
+};
+
+&usart2 {
+	status = "disabled";
+};
+
+&can2 {
+	status = "disabled";
+};
+
+&i2s3 {
+	status = "disabled";
+};
+
+&usbotg_fs {
+	status = "disabled";
+};
+
+&timers2 {
+	status = "disabled";
+};
+
+&timers4 {
+	status = "disabled";
+};
+
+/* --- Enable GPIO ports F & G used on STM32F407ZGT6 LQFP144 --- */
+&gpiof {
+	status = "okay";
+};
+
+&gpiog {
+	status = "okay";
+};
+
+/* --- Add PF8 TIM13_CH1 pinctrl missing from LQFP100 discovery base --- */
+&pinctrl {
+	tim13_ch1_pf8: tim13_ch1_pf8 {
+		pinmux = <STM32_PINMUX('F', 8, AF9)>;
+	};
+};
+
+/* --- RS232 DB9 Shell & Digital Twin Telemetry (PA9/PA10) --- */
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/* --- Buzzer PWM (PF8 -> TIM13_CH1) --- */
+&timers13 {
+	status = "okay";
+	st,prescaler = <83>;
+
+	pwm13: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim13_ch1_pf8>;
+		pinctrl-names = "default";
+	};
+};
+
+/* --- ADC1 Sensors (override PA6 away from stm32f4_disco default!) --- */
+&adc1 {
+	pinctrl-0 = <&adc1_in8_pb0 &adc1_in9_pb1
+		     &adc1_in10_pc0 &adc1_in11_pc1 &adc1_in12_pc2>;
+	pinctrl-names = "default";
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	channel@8 {
+		reg = <8>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+
+	channel@9 {
+		reg = <9>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+
+	channel@a {
+		reg = <10>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+
+	channel@b {
+		reg = <11>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+
+	channel@c {
+		reg = <12>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+};
+
+/* --- Shared I2C1 (PB6/PB7): DS3231 RTC + AT24C512 EEPROM --- */
+&audio_codec {
+	status = "disabled";
+};
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	status = "okay";
+
+	at24_eeprom: eeprom@50 {
+		compatible = "atmel,at24";
+		reg = <0x50>;
+		size = <65536>;
+		pagesize = <128>;
+		address-width = <16>;
+		timeout = <5>;
+		status = "okay";
+	};
+};
+
+/* --- Shared SPI1 (PB3/PB4/PB5): 7-Segment Clock LED & 4x4 Keypad --- */
+&spi1 {
+	pinctrl-0 = <&spi1_sck_pb3 &spi1_miso_pb4 &spi1_mosi_pb5>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/* --- SPI2 (PB13/PB14/PB15 + PB12 CS): Onboard W25Q64FV Flash --- */
+&spi2 {
+	pinctrl-0 = <&spi2_sck_pb13 &spi2_miso_pb14 &spi2_mosi_pb15>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/* --- CAN1 Bus 500 kbps (PB8/PB9 via TJA1050, requires SW13=ON) --- */
+&can1 {
+	pinctrl-0 = <&can1_rx_pb8 &can1_tx_pb9>;
+	pinctrl-names = "default";
+	bitrate = <500000>;
+	sample-point = <875>;
+	status = "okay";
+};
+
+/* --- Independent Hardware Watchdog --- */
+&iwdg {
+	status = "okay";
+};

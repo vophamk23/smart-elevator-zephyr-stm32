@@ -1,0 +1,15 @@
+# Zephyr / CMake / Clangd build & cache
+build/
+.cache/
+
+# IDE local settings
+.vscode/
+
+# Python cache & temporary runtime captures
+__pycache__/
+*.py[cod]
+*.csv
+
+# OS files
+Thumbs.db
+.DS_Store
