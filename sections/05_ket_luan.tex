@@ -1,0 +1,89 @@
+\clearpage
+\section{KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN}
+
+\subsection{Kết luận và Đánh giá Tổng kết Đề tài}
+Đề tài đã hoàn thành xuất sắc toàn bộ mục tiêu đề ra, thiết kế và hiện thực thành công hệ thống điều khiển thang máy thông minh 7 tầng an toàn thời gian thực theo chuẩn quy trình chữ V (V-Model Verification \& Validation) trên nền tảng \textbf{Zephyr RTOS v4.4.0} và vi điều khiển \textbf{STM32F407ZGT6} (bo mạch \textbf{BKIT ARM4}). Bảng~\ref{tab:conclusion_req_vs_actual} tổng hợp mức độ hoàn thành đối chiếu giữa 12 yêu cầu kỹ thuật ban đầu và kết quả đo lường thực tế trên phần cứng.
+
+\begingroup
+\renewcommand{\arraystretch}{1.18}%
+\setlength{\tabcolsep}{4.5pt}%
+\fontsize{8.2}{10.5}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|C{1.7cm}|Y|Y|C{2.3cm}|}
+\caption{Bảng tổng hợp đối chiếu Chỉ tiêu Kỹ thuật Thiết kế (REQ) và Kết quả Thực tế Đạt được}\label{tab:conclusion_req_vs_actual}\\
+\hline
+\rowcolor{tablehead}
+\thcell{Mã Yêu cầu} & \thcell{Chỉ tiêu Kỹ thuật Thiết kế (REQ)} & \thcell{Kết quả Thực tế Đo đạc \& Kiểm chứng} & \thcell{Đánh giá} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{Mã Yêu cầu} & \thcell{Chỉ tiêu Kỹ thuật Thiết kế (REQ)} & \thcell{Kết quả Thực tế Đo đạc \& Kiểm chứng} & \thcell{Đánh giá} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\texttt{REQ-001} & Devicetree \texttt{app.overlay} kích hoạt toàn bộ ngoại vi phần cứng BKIT ARM4. & Khai thác 100\% (13 cụm linh kiện); Build 0 lỗi, 0 cảnh báo ở cờ \texttt{-Wall -Wextra}. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-002} & Khóa liên động kép 2 tầng chống xung đột hai chiều động cơ \texttt{Y0/Y1}. & Kiểm tra chéo 2 lớp (Core HSM + BSP GPIO), rơ-le ngắt an toàn trong mọi tình huống lỗi. & \textbf{Hoàn thành 100\%} \\
+\hline
+\texttt{REQ-003} & Phản xạ ngắt kẹt cửa \texttt{X0 (PA6)} và đảo chiều mở an toàn tức thời. & Đo bằng thanh ghi \texttt{DWT->CYCCNT}: Độ trễ ngắt đạt $\approx 18.2~\mu\text{s} \ll 1000~\mu\text{s}$. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-004} & Giải thuật lập lịch hai chiều \texttt{SCAN/LOOK} với mặt nạ bit $O(1)$. & Gom cuốc 2 chiều mượt mà, đổi hướng tại biên; độ phức tạp tính toán cố định $O(1)$. & \textbf{Hoàn thành 100\%} \\
+\hline
+\texttt{REQ-005} & Giám sát nhiệt độ buồng thang qua \texttt{LM35} với bộ lọc trễ chống bão lỗi. & Lọc trễ 2 ngưỡng Hysteresis: Kích hoạt báo cháy $\ge 55.0^\circ\text{C}$, giải tỏa ở $\le 48.0^\circ\text{C}$. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-006} & Đo tải trọng cabin qua biến trở \texttt{VR1} kèm cảnh báo quá tải an toàn. & Lọc trễ Hysteresis: Treo cửa \& hú còi khi $\ge 800\text{ kg}$, tự động giải tỏa khi $\le 750\text{ kg}$. & \textbf{Hoàn thành 100\%} \\
+\hline
+\texttt{REQ-007} & Đồng bộ bus \texttt{SPI1} hiển thị 4 LED 7 đoạn và quét 16 phím ma trận. & Bảo vệ an toàn đa luồng bằng \texttt{k\_mutex}; hiển thị hiệu ứng vạch cuộn \texttt{UP/dn} mượt mà. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-008} & Mạng truyền thông \texttt{CAN1 500 kbps} với 3 bộ lọc chấp nhận phần cứng. & Cài đặt 3 bộ lọc phần cứng (E-Stop \texttt{0x080}, Hall \texttt{0x10x}, Status \texttt{0x200..0x3FF}), \texttt{TEC=0}. & \textbf{Hoàn thành 100\%} \\
+\hline
+\texttt{REQ-009} & Giám sát độ sống liên kết trạm CAN đối tác với thời gian chờ 2000 ms. & Bắt lỗi mất Heartbeat sau đúng $\approx 2000\text{ ms}$; tự động chuyển sang \texttt{FAIL\_SAFE}. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-010} & Cơ chế tự động khôi phục lỗi \texttt{BUS-OFF} và bảo vệ đường truyền CAN. & Tự động gọi \texttt{can\_recover()}, giới hạn tần suất 1000~ms và ghi nhận hộp đen EEPROM. & \textbf{Hoàn thành 100\%} \\
+\hline
+\texttt{REQ-011} & Bộ đếm \texttt{IWDG 2500 ms} đa luồng và hộp đen vòng 32 bản ghi trên EEPROM. & Kiểm tra điểm danh 4 luồng trước khi nạp watchdog; lưu 32 bản ghi kèm \textbf{CRC16/CRC32}. & \textbf{Hoàn thành 100\%} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-012} & Môi trường kiểm thử kép: Zephyr Shell CLI và phần mềm PC Digital Twin. & Đồng bộ thời gian thực gói tin JSON \texttt{\$TWIN} (200~ms), vượt qua 100\% bài test tự động. & \textbf{Hoàn thành 100\%} \\
+\hline
+\end{xltabular}
+\endgroup
+
+Các đóng góp khoa học và giá trị kỹ thuật cốt lõi đạt được:
+\begin{itemize}[nosep]
+    \item \textbf{Kiến trúc phần mềm thời gian thực chuẩn công nghiệp:} Vận hành hoàn toàn bằng 7 luồng tĩnh (\texttt{K\_THREAD\_DEFINE}) hướng sự kiện nghiêm ngặt, loại bỏ hoàn toàn việc cấp phát động (Zero-Heap Allocation), ngăn ngừa triệt để hiện tượng phân mảnh RAM hay lỗi rò rỉ bộ nhớ trong các chu kỳ vận hành dài hạn.
+    \item \textbf{An toàn đa lớp theo tiêu chuẩn công nghiệp:} Kết hợp hài hòa giữa Khóa liên động động cơ 2 tầng (\textit{Core + BSP}), Bộ lọc trễ 2 ngưỡng Hysteresis chống chập chờn tiếp điểm, Cơ chế điểm danh đa luồng trước khi nạp Hardware Watchdog, và Hộp đen sự cố hai tầng kiểm tra toàn vẹn dữ liệu (\textbf{CRC32-IEEE} cho Header và \textbf{CRC16-CCITT} cho từng bản ghi).
+    \item \textbf{Hiệu quả tối ưu tài nguyên phần cứng vượt bậc:} Toàn bộ firmware hệ thống (bao gồm cả nhân Zephyr RTOS, hệ thống driver BSP, máy trạng thái Core HSM, mạng CAN và giao diện Shell CLI) chỉ chiếm dụng \textbf{9.93\% Flash ROM} (\texttt{104\,112 Bytes}) và \textbf{21.83\% SRAM} (\texttt{28\,608 Bytes}), để lại biên độ dự phòng dồi dào cho các tính năng mở rộng trong tương lai.
+\end{itemize}
+
+\subsection{Hướng phát triển Nâng cao}
+Dựa trên kiến trúc mô-đun hóa cao và tính mở của nền tảng Zephyr RTOS, hệ thống có thể mở rộng theo 3 hướng nghiên cứu ứng dụng thực tế:
+\begin{itemize}[nosep]
+    \item \textbf{Tích hợp lớp Bảo mật An ninh mạng (Cybersecurity) cho Bus CAN Công nghiệp:} Bổ sung module xác thực truyền thông an toàn (\textit{Secure Onboard Communication -- SecOC}) sử dụng thuật toán mã hóa nhẹ CMAC-AES-128 và bộ đếm chuỗi đơn điệu (\textit{Freshness Value}) để chống lại các cuộc tấn công nghe lén, giả mạo lệnh gọi tầng hoặc phát lại khung khẩn cấp trên đường truyền CAN vật lý.
+    \item \textbf{Giao diện HMI Đồ họa Màu trực tiếp qua Bộ điều khiển FSMC TFT-LCD:} Khai thác bộ điều khiển nhớ tĩnh linh hoạt \textbf{FSMC} có sẵn trên vi điều khiển \texttt{STM32F407ZGT6} để kết nối trực tiếp với màn hình cảm ứng màu TFT-LCD tích hợp trên bo mạch BKIT ARM4, xây dựng giao diện người dùng đồ họa (GUI) hiển thị biểu đồ nhiệt độ, tải trọng và sơ đồ trạng thái cabin theo thời gian thực bên cạnh cụm LED 7 đoạn truyền thống.
+    \item \textbf{Thuật toán Điều phối Nhóm Đa Cabin (\textit{Multi-Car Group Elevator Dispatching}):} Mở rộng giao thức CAN sang kiến trúc mạng cụm đa nút (Cluster), kết nối đồng thời từ 2 đến 4 bo mạch điều khiển các cabin song song trong cùng một tòa nhà. Áp dụng giải thuật tối ưu hóa chi phí thời gian chờ ước tính (\textit{Estimated Time of Arrival -- ETA}) kết hợp thuật toán di truyền hoặc heuristic để phân bổ cuộc gọi tầng thông minh, giảm thiểu thời gian chờ của hành khách và tiết kiệm điện năng tiêu thụ toàn hệ thống.
+\end{itemize}
+
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{Tài liệu tham khảo}
+\section*{TÀI LIỆU THAM KHẢO}
+
+\begin{enumerate}[label={[\arabic*]}, leftmargin=2.2em, itemsep=4pt]
+    \item Khoa Khoa học \& Kỹ thuật Máy tính -- Trường Đại học Bách Khoa -- ĐHQG-HCM, \textit{Kit Thí Nghiệm STM32 ARM4 -- Quick Start Guide (BKIT\_ARM4)}, Lưu hành nội bộ, 2023.
+    \item Khoa Khoa học \& Kỹ thuật Máy tính -- Trường Đại học Bách Khoa -- ĐHQG-HCM, \textit{Tài liệu giảng dạy môn Hệ thống Nhúng (CO3053): Real-Time Operating Systems, Finite State Machines \& Industrial Buses}, 2024.
+    \item The Linux Foundation, \textit{Zephyr Project v4.4.0 Technical Documentation: Architecture, Kernel Services, Devicetree, bxCAN, ADC and Watchdog APIs}, \url{https://docs.zephyrproject.org/4.4.0/}, 2024.
+    \item STMicroelectronics, \textit{RM0090 Reference Manual: STM32F405/415, STM32F407/417, STM32F427/437 and STM32F429/439 Advanced Arm-based 32-bit MCUs}, Rev 19, 2021.
+    \item STMicroelectronics, \textit{PM0214 Programming Manual: STM32 Cortex-M4 MCUs and MPUs programming manual}, DocID022708 Rev 10, 2020.
+    \item International Organization for Standardization, \textit{ISO 11898-1:2015 Road vehicles -- Controller area network (CAN) -- Part 1: Data link layer and physical signalling}, 2015.
+    \item Microchip Technology Inc., \textit{AT24C512C: $I^2C$-Compatible (2-Wire) Serial EEPROM 512-Kbit (65,536 $\times$ 8) Datasheet}, DS20006161A, 2019.
+\end{enumerate}

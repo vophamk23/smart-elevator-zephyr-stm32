@@ -1,0 +1,281 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{type1cm}
+
+% --- HỖ TRỢ TIẾNG VIỆT VÀ MÃ HÓA UNICODE ---
+\usepackage{vntex}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% --- CẤU HÌNH TRANG VÀ LỀ CHUẨN ĐẠI HỌC BÁCH KHOA TP.HCM ---
+\usepackage{geometry}
+\geometry{
+    a4paper,
+    left=30mm,
+    right=20mm,
+    top=30mm,
+    bottom=25mm,
+    headheight=40pt,
+    headsep=30pt,
+    footskip=30pt
+}
+
+% --- KHOẢNG CÁCH DÒNG VÀ ĐOẠN VĂN ---
+\usepackage{setspace}
+\onehalfspacing                 % Khoảng cách dòng 1.5
+\setlength{\parindent}{1.5em}    % Thụt đầu dòng đoạn văn
+\setlength{\parskip}{6pt}        % Khoảng cách giữa các đoạn
+
+% --- GÓI TOÁN HỌC & KÝ HIỆU KỸ THUẬT ---
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{bm}
+
+% --- HÌNH ẢNH, BẢNG BIỂU & ĐỒ HỌA ---
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{lastpage}
+\usepackage{varwidth}
+\usepackage{enumitem}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{calc,arrows,arrows.meta,positioning,shapes,shapes.multipart,fit,backgrounds,decorations.pathreplacing}
+
+% --- PHONG CÁCH SƠ ĐỒ HỌC THUẬT (IEEE / TEXTBOOK VECTOR TIKZ) ---
+\tikzset{
+    acadbox/.style={
+        rectangle, draw=black!85, fill=white, line width=0.75pt,
+        align=center, font=\scriptsize, inner sep=4pt, minimum height=0.85cm
+    },
+    acadboxnav/.style={
+        rectangle, draw=tablehead, fill=white, line width=0.9pt,
+        align=center, font=\scriptsize, inner sep=4pt
+    },
+    acadhdr/.style={
+        rectangle, draw=black!85, fill=black!5, line width=0.75pt,
+        align=center, font=\scriptsize\bfseries, inner sep=3.5pt
+    },
+    acadmcu/.style={
+        rectangle, draw=tablehead, fill=tablehead!4, line width=1.1pt,
+        align=center, font=\footnotesize, inner sep=5pt
+    },
+    acadport/.style={
+        rectangle, draw=black!75, fill=white, line width=0.6pt,
+        align=center, font=\tiny\ttfamily, inner sep=2.2pt, minimum width=1.45cm, minimum height=0.42cm
+    },
+    acadzone/.style={
+        rectangle, draw=black!55, dashed, line width=0.6pt,
+        inner sep=7pt
+    },
+    acadarr/.style={-{Stealth[length=2.1mm, width=1.35mm]}, draw=black!85, line width=0.75pt},
+    acadbiarr/.style={{Stealth[length=2.0mm, width=1.3mm]}-{Stealth[length=2.0mm, width=1.3mm]}, draw=black!85, line width=0.75pt},
+    acadline/.style={draw=black!85, line width=0.75pt},
+    acaddash/.style={-{Stealth[length=2.0mm, width=1.3mm]}, draw=tablehead, dashed, line width=0.7pt},
+    acaddashbi/.style={{Stealth[length=1.9mm, width=1.25mm]}-{Stealth[length=1.9mm, width=1.25mm]}, draw=tablehead, dashed, line width=0.65pt},
+    acadlbl/.style={font=\tiny\sffamily, fill=white, inner sep=1.2pt, text=black!90},
+    acadpin/.style={font=\tiny\ttfamily, text=black!85},
+}
+\usepackage[most]{tcolorbox}
+
+\captionsetup[figure]{labelfont={small,bf},textfont={small,it},belowskip=4pt,aboveskip=6pt}
+\captionsetup[table]{labelfont={small,bf},textfont={small,it},belowskip=4pt,aboveskip=6pt}
+
+% --- CẤU HÌNH BẢNG BIỂU CHUYÊN NGHIỆP (KHÔNG BAO GIỜ LỐ LỀ) ---
+\definecolor{tablehead}{RGB}{21, 56, 96}
+\definecolor{tableborder}{RGB}{165, 182, 201}
+\definecolor{rowodd}{RGB}{255, 255, 255}
+\definecolor{roweven}{RGB}{243, 247, 252}
+\definecolor{subheadbg}{RGB}{218, 231, 245}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\thcell}[1]{\textcolor{white}{\textbf{#1}}}
+\setlength{\emergencystretch}{2em}
+\setlength{\LTpre}{6pt}
+\setlength{\LTpost}{6pt}
+\setlength{\LTcapwidth}{\textwidth}
+
+% --- LIÊN KẾT SIÊU VĂN BẢN (HYPERREF) ---
+\usepackage[unicode,pdfpagelabels=false]{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    urlcolor=blue,
+    bookmarksnumbered=true,
+    plainpages=false
+}
+
+% --- ĐỊNH DẠNG CODE LẬP TRÌNH (LISTINGS) ---
+\usepackage{listings}
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{commentgreen}{rgb}{0,0.6,0}
+\definecolor{keywordblue}{rgb}{0,0,0.8}
+\definecolor{stringred}{rgb}{0.8,0,0}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    frame=single,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{keywordblue}\bfseries,
+    commentstyle=\color{commentgreen}\itshape,
+    stringstyle=\color{stringred},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    breaklines=true,
+    tabsize=2,
+    showstringspaces=false
+}
+
+% ==============================================================
+%               CẤU HÌNH THÔNG TIN BÀI TẬP LỚN
+% ==============================================================
+\newcommand{\TenMonHoc}{Hệ thống Nhúng (CO3053)}
+\newcommand{\TenDeTai}{HỆ THỐNG ĐIỀU KHIỂN THANG MÁY 7 TẦNG AN TOÀN THỜI GIAN THỰC TRÊN ZEPHYR RTOS, CAN BUS VÀ KIỂM THỬ HIL}
+\newcommand{\LopMonHoc}{L01}
+\newcommand{\HocKy}{HK261}
+\newcommand{\NgayNop}{01/12/2026}
+\newcommand{\GVHD}{Thầy Nguyễn Hòa Hưng}
+
+% --- TIÊU ĐỀ TRANG VÀ CHÂN TRANG (FANCYHDR CHO ARTICLE) ---
+\usepackage{fancyhdr}
+\setlength{\headheight}{40pt}
+\pagestyle{fancy}
+\fancyhead{}
+
+\renewcommand{\sectionmark}[1]{\markboth{\thesection.\ #1}{}}
+
+\fancyhead[L]{%
+  \raisebox{8.5pt}{%
+    \begin{tabular}[c]{@{}c@{\hspace{2mm}}l@{}}
+      \raisebox{-0.15\height}{\includegraphics[width=7.5mm, height=7mm]{image/hcmut.png}} &
+      \begin{varwidth}[c]{75mm}\raggedright
+        \fontsize{8pt}{12.5pt}\selectfont \mbox{TRƯỜNG ĐẠI HỌC BÁCH KHOA -- ĐHQG-HCM}\newline
+        \fontsize{8pt}{12.5pt}\selectfont \mbox{KHOA KHOA HỌC \& KỸ THUẬT MÁY TÍNH}
+      \end{varwidth}
+    \end{tabular}%
+  }%
+}
+
+% \fancyhead[R]{%
+%   \raisebox{7pt}{%
+%     \begin{varwidth}[c]{80mm}\raggedleft
+%       \fontsize{8pt}{11pt}\selectfont \nouppercase{\leftmark}
+%     \end{varwidth}%
+%   }%
+% }
+
+\fancyfoot{}
+\fancyfoot[L]{\scriptsize \TenMonHoc\\ Năm học: 2026 - 2027}
+\fancyfoot[R]{\scriptsize Trang {\thepage}/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+\fancypagestyle{plain}{
+  \fancyhead{}
+  \fancyhead[L]{%
+    \raisebox{8.5pt}{%
+      \begin{tabular}[c]{@{}c@{\hspace{2mm}}l@{}}
+        \raisebox{-0.15\height}{\includegraphics[width=7.5mm, height=7mm]{image/hcmut.png}} &
+        \begin{varwidth}[c]{75mm}\raggedright
+          \fontsize{8pt}{12.5pt}\selectfont \mbox{TRƯỜNG ĐẠI HỌC BÁCH KHOA -- ĐHQG-HCM}\newline
+          \fontsize{8pt}{12.5pt}\selectfont \mbox{KHOA KHOA HỌC \& KỸ THUẬT MÁY TÍNH}
+        \end{varwidth}
+      \end{tabular}%
+    }%
+  }
+  \fancyhead[R]{%
+    \raisebox{7pt}{%
+      \begin{varwidth}[c]{80mm}\raggedleft
+        \fontsize{8pt}{11pt}\selectfont \nouppercase{\leftmark}
+      \end{varwidth}%
+    }%
+  }
+  \fancyfoot{}
+  \fancyfoot[L]{\scriptsize \TenMonHoc\\ Năm học: 2026 - 2027}
+  \fancyfoot[R]{\scriptsize Trang {\thepage}/\pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.3pt}
+  \renewcommand{\footrulewidth}{0.3pt}
+}
+
+% Định nghĩa lại tiêu đề tiếng Việt
+\addto\captionsvietnamese{
+    \renewcommand{\contentsname}{MỤC LỤC}
+    \renewcommand{\listfigurename}{DANH MỤC HÌNH VẼ}
+    \renewcommand{\listtablename}{DANH MỤC BẢNG BIỂU}
+    \renewcommand{\refname}{TÀI LIỆU THAM KHẢO}
+}
+
+% Định dạng cỡ chữ tiêu đề
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+                                   {-3.5ex \@plus -1ex \@minus -.2ex}%
+                                   {2.3ex \@plus.2ex}%
+                                   {\normalfont\fontsize{15}{18}\selectfont\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+                                     {-3.25ex\@plus -1ex \@minus -.2ex}%
+                                     {1.5ex \@plus .2ex}%
+                                     {\normalfont\fontsize{13}{16}\selectfont\bfseries}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+                                     {-2.8ex\@plus -0.8ex \@minus -.2ex}%
+                                     {1.2ex \@plus .2ex}%
+                                     {\normalfont\fontsize{12}{15}\selectfont\bfseries}}
+\makeatother
+
+% ==============================================================
+%                    BẮT ĐẦU TÀI LIỆU
+% ==============================================================
+\begin{document}
+
+% --- TRANG BÌA ---
+\pagenumbering{gobble}
+\input{cover}
+\clearpage
+
+% --- PHẦN ĐẦU (ĐÁNH SỐ LA MÃ) ---
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+% 1. Bảng phân công nhiệm vụ
+\input{sections/assignment}
+\clearpage
+
+% 2. Mục lục
+\phantomsection
+\addcontentsline{toc}{section}{\contentsname}
+\tableofcontents
+\clearpage
+
+% 3. Danh mục hình vẽ
+\phantomsection
+\addcontentsline{toc}{section}{\listfigurename}
+\listoffigures
+\clearpage
+
+% 4. Danh mục bảng biểu
+\phantomsection
+\addcontentsline{toc}{section}{\listtablename}
+\listoftables
+\clearpage
+
+% --- NỘI DUNG CHÍNH (ĐÁNH SỐ TRANG Ả RẬP) ---
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\setcounter{table}{0}
+
+\input{sections/01_tong_quan}
+\input{sections/02_kien_truc}
+\input{sections/03_hien_thuc}
+\input{sections/04_thuc_nghiem}
+\input{sections/05_ket_luan}
+
+\end{document}

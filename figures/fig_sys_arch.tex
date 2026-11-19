@@ -1,0 +1,120 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % === KHOI MCU TRUNG TAM (STM32F407ZGT6 - LQFP144) ===
+    \draw[draw=tablehead, fill=tablehead!3, line width=1.1pt] (-3.75, -5.65) rectangle (3.75, 6.05);
+    \draw[draw=tablehead, fill=tablehead!12, line width=0.8pt] (-3.75, 5.00) rectangle (3.75, 6.05);
+    \node[align=center, font=\footnotesize\bfseries, text=tablehead] at (0, 5.52)
+        {STM32F407ZGT6 (\texttt{LQFP144})\\[1pt]{\tiny\normalfont ARM Cortex-M4F @ 168 MHz | 1 MB Flash | 192 KB SRAM}};
+
+    % Lop phan mem ben trong MCU (4 dong gon -> khong cham AHB1)
+    \node[acadbox, text width=6.7cm, fill=white, minimum height=1.25cm] (sw_core) at (0, 3.90)
+        {\textbf{Zephyr RTOS v4.4.0 (7 Luồng tĩnh)}\\[1pt]
+         {\tiny P2..P8: An toàn $\cdot$ HSM $\cdot$ CAN $\cdot$ HMI $\cdot$ Watchdog}\\
+         {\tiny HSM 9 Trạng thái $\cdot$ Lập lịch \texttt{SCAN/LOOK} $\cdot$ Khóa liên động Core}};
+
+    % Cac bo dieu khien ngoai vi ben trong MCU (buoc doc 1.85cm rong rai)
+    \node[acadport, minimum width=2.85cm] (p_gpioin)  at (-1.95, 1.35)  {EXTI6/7 \& GPIOA/C};
+    \node[acadport, minimum width=2.85cm] (p_gpioout) at (-1.95, -0.50) {GPIOE Out \& DWT};
+    \node[acadport, minimum width=2.85cm] (p_tim13)   at (-1.95, -2.35) {TIM13\_CH1 (PWM)};
+    \node[acadport, minimum width=2.85cm] (p_adc1)    at (-1.95, -4.20) {ADC1 (12-bit SAR)};
+
+    \node[acadport, minimum width=2.85cm] (p_spi1)    at (1.95, 1.35)   {SPI1 (Mutex Bus)};
+    \node[acadport, minimum width=2.85cm] (p_spi2)    at (1.95, -0.50)  {SPI2 Master};
+    \node[acadport, minimum width=2.85cm] (p_i2c1)    at (1.95, -2.35)  {I2C1 (Mutex Bus)};
+    \node[acadport, minimum width=2.85cm] (p_usart1)  at (1.95, -4.20)  {USART1 UART};
+
+    % Bo dieu khien day MCU: CAN1 & IWDG
+    \node[acadport, minimum width=2.85cm] (p_can1)    at (-1.85, -5.20) {bxCAN1 (500 kbps)};
+    \node[acadport, minimum width=2.85cm] (p_iwdg)    at (1.85, -5.20)  {IWDG (2500 ms) \& SWD};
+
+    % Bus noi bo ben trong MCU
+    \draw[acadline, line width=1.1pt] (0, 2.95) -- (0, -4.65);
+    \node[acadlbl, font=\tiny\bfseries] at (0, 2.30) {AHB1 / APB1 / APB2};
+    \foreach \y in {1.35, -0.50, -2.35, -4.20} {
+        \draw[acadline] (-0.48, \y) -- (0.48, \y);
+        \fill (0, \y) circle (1.3pt);
+    }
+    \draw[acadline] (0, -4.65) -| (p_can1.north);
+    \draw[acadline] (0, -4.65) -| (p_iwdg.north);
+
+    % === NGOAI VI BEN TRAI (dat o x=-8.75 -> mep phai khung zone o ~-6.08, cach MCU -3.75 toi 2.33cm!) ===
+    \node[acadbox, text width=4.70cm, minimum height=1.20cm] (ext_in) at (-8.75, 1.35)
+        {\textbf{Ngõ vào Cách ly Quang \texttt{X0..X3}}\\[1pt]
+         {\tiny \texttt{X0(PA6)}: Kẹt cửa $\cdot$ \texttt{X1(PA7)}: E-Stop}\\
+         {\tiny \texttt{X2(PC4)}: Tầng $\cdot$ \texttt{X3(PC5)}: Quá tải số}};
+
+    \node[acadbox, text width=4.70cm, minimum height=1.20cm] (ext_out) at (-8.75, -0.50)
+        {\textbf{Ngõ ra Rơ-le Quang \texttt{Y0, Y1, LED3}}\\[1pt]
+         {\tiny \texttt{Y0(PE5)}: Động cơ LÊN $\cdot$ \texttt{Y1(PE6)}: XUỐNG}\\
+         {\tiny \texttt{PE4}: Đèn Heartbeat RTOS}};
+
+    \node[acadbox, text width=4.70cm, minimum height=1.05cm] (ext_pwm) at (-8.75, -2.35)
+        {\textbf{Còi Cảnh báo PWM (\texttt{PF8})}\\[1pt]
+         {\tiny Tần số \texttt{1.5..3.0 kHz} (50\% duty, non-block)}};
+
+    \node[acadbox, text width=4.70cm, minimum height=1.20cm] (ext_adc) at (-8.75, -4.20)
+        {\textbf{Cảm biến Tương tự (5 kênh \texttt{ADC1})}\\[1pt]
+         {\tiny \texttt{LM35(PC2)} $\cdot$ \texttt{VR1(PC1)} $\cdot$ \texttt{LDR(PC0)}}\\
+         {\tiny Áp nguồn \texttt{PB0} $\cdot$ Dòng tải \texttt{PB1}}};
+
+    % Duong noi ben trai (nhan nam hoan toan trong khoang trang giua zone va MCU: x = -4.92)
+    \draw[acadarr] (ext_in.east) -- (-3.75, 1.35);
+    \node[acadlbl, anchor=south] at (-4.92, 1.39) {4 bit Active-Low};
+    \draw[acadarr] (-3.75, -0.50) -- (ext_out.east);
+    \node[acadlbl, anchor=south] at (-4.92, -0.46) {3 đường \texttt{PE4..6}};
+    \draw[acadarr] (-3.75, -2.35) -- (ext_pwm.east);
+    \node[acadlbl, anchor=south] at (-4.92, -2.31) {\texttt{PF8 (AF9)}};
+    \draw[acadarr] (ext_adc.east) -- (-3.75, -4.20);
+    \node[acadlbl, anchor=south] at (-4.92, -4.16) {5 kênh ($0..3.3\text{V}$)};
+
+    % === NGOAI VI BEN PHAI (dat o x=+8.80 -> mep trai khung zone o ~+6.10, cach MCU +3.75 toi 2.35cm!) ===
+    \node[acadbox, text width=4.75cm, minimum height=1.20cm] (ext_spi1) at (8.80, 1.35)
+        {\textbf{Giao diện HMI (\texttt{Shared SPI1}, 1 MHz)}\\[1pt]
+         {\tiny 2$\times$\texttt{74HC595}(\texttt{PG6}): 4 LED 7 đoạn \texttt{UP/dn}}\\
+         {\tiny 2$\times$\texttt{74HC165}(\texttt{PD3}): Ma trận 16 phím 4$\times$4}};
+
+    \node[acadbox, text width=4.75cm, minimum height=1.05cm] (ext_spi2) at (8.80, -0.50)
+        {\textbf{Bộ nhớ NOR Flash \texttt{W25Q64FV}}\\[1pt]
+         {\tiny 8 MB (\texttt{SPI2 PB12..15}, JEDEC \texttt{EF 40 17})}};
+
+    \node[acadbox, text width=4.75cm, minimum height=1.20cm] (ext_i2c1) at (8.80, -2.35)
+        {\textbf{Lưu trữ \& Giờ thực (\texttt{Shared I2C1})}\\[1pt]
+         {\tiny \texttt{DS3231 RTC} (\texttt{0x68}): Giờ thực BCD}\\
+         {\tiny \texttt{AT24C512 EEPROM} (\texttt{0x50}): Hộp đen 32 ô}};
+
+    \node[acadbox, text width=4.75cm, minimum height=1.20cm] (ext_uart) at (8.80, -4.20)
+        {\textbf{\texttt{MAX3232} $\leftrightarrow$ PC Twin / HIL}\\[1pt]
+         {\tiny \texttt{USART1 RS232 DB9} (\texttt{115200 8N1})}\\
+         {\tiny Zephyr Shell CLI \& \texttt{\$TWIN} 200ms}};
+
+    % Duong noi ben phai (nhan nam hoan toan trong khoang trang giua MCU va zone: x = +4.95)
+    \draw[acadbiarr] (3.75, 1.35) -- (ext_spi1.west);
+    \node[acadlbl, anchor=south] at (4.95, 1.39) {\texttt{PB3..5, PG6, PD3}};
+    \draw[acadbiarr] (3.75, -0.50) -- (ext_spi2.west);
+    \node[acadlbl, anchor=south] at (4.95, -0.46) {\texttt{PB12..15} (2 MHz)};
+    \draw[acadbiarr] (3.75, -2.35) -- (ext_i2c1.west);
+    \node[acadlbl, anchor=south] at (4.95, -2.31) {\texttt{PB6/7} (400 kHz)};
+    \draw[acadbiarr] (3.75, -4.20) -- (ext_uart.west);
+    \node[acadlbl, anchor=south] at (4.95, -4.16) {\texttt{PA9/PA10} TX/RX};
+
+    % === NGOAI VI PHIA DUOI (CAN1 TJA1050 & ST-LINK) ===
+    \node[acadbox, text width=5.3cm, minimum height=1.05cm] (ext_can) at (-3.45, -7.25)
+        {\textbf{Bộ thu phát Vi sai \texttt{TJA1050} (\texttt{SW13=ON})}\\[1pt]
+         {\tiny \texttt{CANH / CANL} ($120~\Omega$) $\leftrightarrow$ 1-Kit Loopback / 2-Kit \texttt{CABIN$\leftrightarrow$HALL}}};
+
+    \node[acadbox, text width=4.7cm, minimum height=1.05cm] (ext_stlink) at (3.45, -7.25)
+        {\textbf{Mạch Nạp \& Gỡ lỗi \texttt{ST-LINK} (\texttt{SW11=ON})}\\[1pt]
+         {\tiny Giao tiếp \texttt{SWDIO / SWCLK} \& Reset MCU}};
+
+    \draw[acadbiarr] (p_can1.south) -- ++(0, -0.75) -| (ext_can.north);
+    \node[acadlbl, anchor=south] at (-2.65, -6.18) {\texttt{PB8 / PB9}};
+    \draw[acadbiarr] (p_iwdg.south) -- ++(0, -0.75) -| (ext_stlink.north);
+    \node[acadlbl, anchor=south] at (2.65, -6.18) {\texttt{SWD}};
+
+    % Khung bao phan he net dut trang nha
+    \begin{scope}[on background layer]
+        \node[acadzone, fit=(ext_in)(ext_out)(ext_pwm)(ext_adc), label={[font=\tiny\bfseries, text=black!75]above:PHÂN HỆ CẢM BIẾN \& CHẤP HÀNH TẠI CHỖ}] {};
+        \node[acadzone, fit=(ext_spi1)(ext_spi2)(ext_i2c1)(ext_uart), label={[font=\tiny\bfseries, text=black!75]above:PHÂN HỆ BUS HMI, LƯU TRỮ \& PC HIL}] {};
+    \end{scope}
+\end{tikzpicture}%
+}

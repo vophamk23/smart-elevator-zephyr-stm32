@@ -1,0 +1,101 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % ==================== NUA TRAI: SHARED SPI1 ====================
+    \draw[draw=black!55, dashed, fill=black!2, line width=0.6pt] (-0.3, -4.55) rectangle (9.05, 3.65);
+    \node[font=\footnotesize\bfseries, text=tablehead, anchor=west] at (-0.1, 3.30) {(a) Kiến trúc Bus \texttt{SPI1} Dùng chung (1 MHz)};
+
+    % MCU SPI1 Master
+    \node[acadmcu, text width=2.55cm, minimum height=4.8cm] (mcu_spi) at (1.30, -0.20)
+        {\textbf{STM32F407}\\[-1pt]\texttt{SPI1 Master}\\[6pt]
+         {\tiny Bộ phân xử:}\\[-1pt]
+         {\tiny\textbf{Mutex Bus SPI1}}\\[-1pt]
+         {\tiny (\textit{Priority Inheritance})}};
+
+    % 2x 74HC595 + 4 LED 7 doan
+    \node[acadbox, text width=3.10cm, minimum height=1.85cm] (hc595) at (7.20, 1.45)
+        {\textbf{2 $\times$ IC \texttt{74HC595}}\\[-1pt]
+         {\tiny Ghi dịch SIPO (16-bit)}\\[-1pt]
+         {\tiny $\rightarrow$ \textbf{4 LED 7 đoạn Anode chung}}\\[-1pt]
+         {\tiny Hiển thị \texttt{UP/dn}, \texttt{FE}, \texttt{Err} @ 100 Hz}};
+
+    % 2x 74HC165 + Ma tran 16 phim
+    \node[acadbox, text width=3.10cm, minimum height=1.85cm] (hc165) at (7.20, -1.95)
+        {\textbf{2 $\times$ IC \texttt{74HC165}}\\[-1pt]
+         {\tiny Ghi dịch PISO (16-bit)}\\[-1pt]
+         {\tiny $\leftarrow$ \textbf{Ma trận 16 phím 4$\times$4}}\\[-1pt]
+         {\tiny Active-Low (\texttt{0..15}, \texttt{0xFFFF}=idle)}};
+
+    % Dau noi day bus SPI1 (kenh day rong ~2.7cm, nhan can giua khoang trong, tach hoan toan vien hop)
+    \draw[acadarr] (mcu_spi.east |- 0, 1.95) -- node[acadpin, above=1.5pt, pos=0.44] {\texttt{PB3 (SCK)}} (hc595.west |- 0, 1.95);
+    \draw[acadarr] (5.12, 1.95) |- ($(hc165.west)+(0, 0.50)$);
+    \fill (5.12, 1.95) circle (1.4pt);
+
+    \draw[acadarr] (mcu_spi.east |- 0, 1.25) -- node[acadpin, above=1.5pt, pos=0.44] {\texttt{PB5 (MOSI)}} (hc595.west |- 0, 1.25);
+    \draw[acadarr] (hc165.west |- 0, -1.25) -- node[acadpin, above=1.5pt, pos=0.50] {\texttt{PB4 (MISO)}} (mcu_spi.east |- 0, -1.25);
+
+    \draw[acadarr, draw=tablehead] (mcu_spi.east |- 0, 0.58) -- node[acadpin, above=1.5pt, pos=0.48] {\texttt{PG6 (LD\_LATCH)}} (hc595.west |- 0, 0.58);
+    \draw[acadarr, draw=tablehead] (mcu_spi.east |- 0, -2.45) -- node[acadpin, above=1.5pt, pos=0.50] {\texttt{PD3 (BTN\_LOAD)}} (hc165.west |- 0, -2.45);
+
+    \node[font=\tiny\itshape, align=center, text=black!80] at (4.35, -3.95)
+        {Lưu ý: Tác vụ HMI khóa \textbf{Mutex Bus SPI1} trước khi tạo xung \texttt{PG6} hoặc \texttt{PD3},\\
+         loại bỏ hoàn toàn nhiễu bấm phím làm nhòe LED 7 đoạn.};
+
+    % ==================== NUA PHAI: SHARED I2C1 ====================
+    \draw[draw=black!55, dashed, fill=black!2, line width=0.6pt] (9.35, -4.55) rectangle (19.15, 3.65);
+    \node[font=\footnotesize\bfseries, text=tablehead, anchor=west] at (9.55, 3.30) {(b) Kiến trúc Bus \texttt{I2C1} Dùng chung (400 kHz)};
+
+    % MCU I2C1 Master
+    \node[acadmcu, text width=2.45cm, minimum height=4.2cm] (mcu_i2c) at (10.85, -0.35)
+        {\textbf{STM32F407}\\[-1pt]\texttt{I2C1 Master}\\[6pt]
+         {\tiny Bộ phân xử:}\\[-1pt]
+         {\tiny\textbf{Mutex Bus I2C1}}\\[-1pt]
+         {\tiny (\textit{Priority Inheritance})}};
+
+    % Nguon 3.3V va dien tro keo len Rp (tach xa vien MCU va day doc bus I2C)
+    \node[font=\tiny\bfseries] (vcc) at (14.40, 2.58) {\texttt{+3.3V}};
+    \draw[acadline] (13.70, 2.33) -- (15.10, 2.33);
+    % Rp1 SCL
+    \draw[acadline] (14.00, 2.33) -- (14.00, 1.98);
+    \draw[acadline, fill=white] (13.89, 1.43) rectangle (14.11, 1.98);
+    \draw[acadline] (14.00, 1.43) -- (14.00, 0.85);
+    \node[font=\tiny] at (13.60, 1.70) {$R_{p1}$};
+    % Rp2 SDA
+    \draw[acadline] (14.80, 2.33) -- (14.80, 1.98);
+    \draw[acadline, fill=white] (14.69, 1.43) rectangle (14.91, 1.98);
+    \draw[acadline] (14.80, 1.43) -- (14.80, 0.05);
+    \node[font=\tiny] at (15.20, 1.70) {$R_{p2}$};
+
+    % Duong bus SCL & SDA (nhan dat cach xa mep phai MCU >= 2.5mm)
+    \draw[acadarr] (mcu_i2c.east |- 0, 0.85) -- (15.72, 0.85);
+    \node[acadpin, anchor=south west] at (12.48, 0.90) {\texttt{PB6(SCL)}};
+    \draw[acadbiarr] (mcu_i2c.east |- 0, 0.05) -- (15.72, 0.05);
+    \node[acadpin, anchor=south west] at (12.48, 0.10) {\texttt{PB7(SDA)}};
+    \fill (14.00, 0.85) circle (1.4pt);
+    \fill (14.80, 0.05) circle (1.4pt);
+
+    % 2 IC tren I2C1: DS3231 & AT24C512
+    \node[acadbox, text width=2.85cm, minimum height=1.75cm] (ds3231) at (17.45, 1.45)
+        {\textbf{IC \texttt{DS3231 RTC}}\\[-1pt]
+         {\tiny Địa chỉ 7-bit: \texttt{0x68}}\\[-1pt]
+         {\tiny Pin dự phòng CR2032}\\[-1pt]
+         {\tiny Cung cấp giờ thực BCD}};
+
+    \node[acadbox, text width=2.85cm, minimum height=1.95cm] (at24) at (17.45, -1.75)
+        {\textbf{IC \texttt{AT24C512 EEPROM}}\\[-1pt]
+         {\tiny Địa chỉ 7-bit: \texttt{0x50}}\\[-1pt]
+         {\tiny 64 KB (Trang 128 B)}\\[-1pt]
+         {\tiny Hộp đen 32 ô \texttt{CRC16/32}}};
+
+    % Nhanh re xuong DS3231 & AT24C512 (o x=15.55 cach xa Rp2 o 15.20)
+    \draw[acadline] (15.55, 0.85) |- ($(ds3231.west)+(0, 0.30)$);
+    \draw[acadline] (15.55, 0.05) |- ($(ds3231.west)+(0, -0.30)$);
+    \draw[acadline] (15.55, 0.85) |- ($(at24.west)+(0, 0.35)$);
+    \draw[acadline] (15.55, 0.05) |- ($(at24.west)+(0, -0.25)$);
+    \fill (15.55, 0.85) circle (1.4pt);
+    \fill (15.55, 0.05) circle (1.4pt);
+
+    \node[font=\tiny\itshape, align=center, text=black!80] at (14.25, -3.95)
+        {Lưu ý: Loại bỏ \texttt{\&audio\_codec CS43L22} và chuyển \texttt{\&i2c1} về \texttt{PB6/PB7}\\
+         giúp giải phóng hoàn toàn chân \texttt{PB9} cho bộ thu phát \texttt{CAN1\_TX}.};
+\end{tikzpicture}%
+}

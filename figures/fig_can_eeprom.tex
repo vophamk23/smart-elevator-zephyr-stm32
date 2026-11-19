@@ -1,0 +1,77 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % === PHAN A: 3 BO LOC PHAN CUNG bxCAN1 (500 kbps) ===
+    \node[font=\footnotesize\bfseries, text=tablehead, anchor=west] at (0, 5.75)
+        {(a) Phân hoạch Ưu tiên 11-bit (\textit{CSMA/AMP}) và 3 Bộ lọc Chấp nhận Phần cứng \texttt{bxCAN1} (\texttt{500 kbps})};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.80cm] (F1) at (2.55, 4.40)
+        {\textbf{HW Filter 1 -- Mức Khẩn cấp}\\[1pt]
+         {\tiny \texttt{ID = 0x080 | Mask = 0x7FF}}\\[2pt]
+         {\tiny Thắng phân xử bit tuyệt đối trên bus\\
+         \texttt{DLC=2}: [\texttt{Mã E-Stop/Fire}, \texttt{Tầng}]}};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.80cm] (F2) at (7.90, 4.40)
+        {\textbf{HW Filter 2 -- Gọi tầng Hành lang}\\[1pt]
+         {\tiny \texttt{ID = 0x100..0x10F | Mask = 0x7F0}}\\[2pt]
+         {\tiny Gom lệnh gọi nút \texttt{HALL} về \texttt{CABIN}\\
+         \texttt{DLC=2}: [\texttt{Tầng 1..7}, \texttt{UP/DOWN}]}};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.80cm] (F3) at (13.25, 4.40)
+        {\textbf{HW Filter 3 -- Giám sát \& Đo RTT}\\[1pt]
+         {\tiny \texttt{ID = 0x200..0x3FF | Mask = 0x600}}\\[2pt]
+         {\tiny \texttt{0x200} Status (\texttt{RTR}) $\cdot$ \texttt{0x300} HB \texttt{250ms}\\
+         \texttt{0x380/0x381} Khung đo \texttt{PING/PONG}}};
+
+    % === PHAN B: TO CHUC BO NHO AT24C512 EEPROM (64 KB, Trang 128 B) ===
+    \node[font=\footnotesize\bfseries, text=tablehead, anchor=west] at (0, 2.75)
+        {(b) Sơ đồ Ánh xạ Vùng nhớ Hộp đen Vòng 32 Bản ghi trên \texttt{AT24C512 EEPROM} (\texttt{I2C1 0x50}, Trang \texttt{128 Byte})};
+
+    \node[acadboxnav, text width=4.25cm, minimum height=1.85cm] (HDR) at (2.25, 1.25)
+        {\textbf{Khối Header Quản lý}\\[1pt]
+         {\tiny Địa chỉ \texttt{0x0000} (16 Bytes)}\\[2pt]
+         {\tiny \texttt{magic = 0x454C4556 ("ELEV")}\\
+         \texttt{next\_seq}, \texttt{write\_idx}, \texttt{valid\_cnt}\\
+         Toàn vẹn: \texttt{crc32\_ieee} (4 Bytes)}};
+
+    \node[acadbox, text width=5.65cm, minimum height=1.85cm] (RING) at (7.80, 1.25)
+        {\textbf{Hàng đợi Vòng 32 Bản ghi Sự cố}\\[1pt]
+         {\tiny Địa chỉ \texttt{0x0080 + idx * 32} (\texttt{STRIDE = 32 B})}\\[2pt]
+         {\tiny Gói \texttt{elevator\_blackbox\_rec\_t} (22 Bytes packed)\\
+          Nằm gọn trang \texttt{128 B}, chống xé trang I2C}};
+
+    \node[acadbox, text width=4.35cm, minimum height=1.85cm] (REC) at (13.45, 1.25)
+        {\textbf{Cơ chế An toàn \& Phục hồi}\\[1pt]
+         {\tiny Tự ghi hộp đen khi xảy ra:}\\[2pt]
+         {\tiny $\bullet$ \texttt{IWDG Reset} (2500ms) qua \texttt{HWINFO}\\
+         $\bullet$ \texttt{CAN\_LINK\_LOST} (>2000ms)\\
+         $\bullet$ \texttt{BUS-OFF} $\rightarrow$ \texttt{can\_recover()}}};
+
+    \draw[acadarr] (HDR.east) -- (RING.west);
+    \draw[acadarr] (REC.west) -- (RING.east);
+
+    % Thanh chi tiet tung truong cua 1 ban ghi 22-byte packed ben trong 32-byte stride
+    \node[font=\tiny\bfseries, text=black!80, anchor=west] at (0, -0.35)
+        {Chi tiết phân bổ trường bên trong 1 bản ghi \texttt{elevator\_blackbox\_rec\_t} (địa chỉ tương đối \texttt{+0x00 .. +0x15}):};
+
+    \draw[acadline, fill=black!3] (0.0, -1.45) rectangle (2.1, -0.70);
+    \node[align=center, font=\tiny] at (1.05, -1.07) {\texttt{+0..3} (4B)\\\texttt{seq}};
+
+    \draw[acadline, fill=white] (2.1, -1.45) rectangle (4.3, -0.70);
+    \node[align=center, font=\tiny] at (3.20, -1.07) {\texttt{+4..7} (4B)\\\texttt{uptime\_ms}};
+
+    \draw[acadline, fill=black!3] (4.3, -1.45) rectangle (7.6, -0.70);
+    \node[align=center, font=\tiny] at (5.95, -1.07) {\texttt{+8..14} (7B)\\Giờ \texttt{DS3231} (\texttt{Y,M,D,h,m,s})};
+
+    \draw[acadline, fill=white] (7.6, -1.45) rectangle (9.5, -0.70);
+    \node[align=center, font=\tiny] at (8.55, -1.07) {\texttt{+15} (1B)\\\texttt{fault\_code}};
+
+    \draw[acadline, fill=black!3] (9.5, -1.45) rectangle (11.4, -0.70);
+    \node[align=center, font=\tiny] at (10.45, -1.07) {\texttt{+16..17} (2B)\\\texttt{state}, \texttt{floor}};
+
+    \draw[acadline, fill=white] (11.4, -1.45) rectangle (13.6, -0.70);
+    \node[align=center, font=\tiny] at (12.50, -1.07) {\texttt{+18..19} (2B)\\\texttt{temp\_deci\_c}};
+
+    \draw[acadline, fill=tablehead!12] (13.6, -1.45) rectangle (15.80, -0.70);
+    \node[align=center, font=\tiny] at (14.70, -1.07) {\texttt{+20..21} (2B)\\\textbf{\texttt{crc16\_ccitt}}};
+\end{tikzpicture}%
+}

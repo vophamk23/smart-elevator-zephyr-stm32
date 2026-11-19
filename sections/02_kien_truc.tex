@@ -1,0 +1,259 @@
+\clearpage
+\section{KIẾN TRÚC PHẦN CỨNG BKIT ARM4}
+
+\subsection{Nền tảng Phần cứng BKIT ARM4 và Kiến trúc Tổng thể}
+Hệ thống điều khiển thang máy 7 tầng được thiết kế lấy bo mạch thí nghiệm \textbf{BKIT ARM4} làm nút xử lý thời gian thực trung tâm, khai thác trực tiếp 13 cụm ngoại vi tích hợp sẵn trên kit mà không cần lắp thêm mạch phụ trợ bên ngoài. Các thông số kiến trúc phần cứng cốt lõi gồm:
+\begin{itemize}[nosep]
+    \item \textbf{Vi điều khiển trung tâm \texttt{STM32F407ZGT6}:} Sử dụng nhân \textbf{ARM Cortex-M4F} có khối tính toán dấu chấm động phần cứng (\textit{FPU}), hoạt động ở tần số xung nhịp hệ thống \texttt{168~MHz} (bus ngoại vi \texttt{APB1 = 42~MHz}, \texttt{APB2 = 84~MHz}), trang bị \texttt{1~MB Flash}, \texttt{192~KB SRAM} và đóng gói kiểu chân \texttt{LQFP144} với 9 cổng GPIO (\texttt{GPIOA..GPIOI}).
+    \item \textbf{Tổ chức 4 phân hệ phần cứng đồng bộ (Hình~\ref{fig:sys_arch}):} Toàn bộ ngoại vi trên bo mạch được quy hoạch thành bốn khối tách biệt:
+    \begin{itemize}[nosep]
+        \item \textbf{(1) Phân hệ An toàn \& Chấp hành cách ly quang:} Thu nhận tín hiệu ngắt cứng kẹt cửa \texttt{X0}, dừng khẩn \texttt{X1} (\texttt{PA6/PA7}), ngõ vào \texttt{X2/X3}, điều khiển rơ-le động cơ Lên/Xuống \texttt{Y0/Y1} (\texttt{PE5/PE6}), đèn nhịp \texttt{PE4} và còi cảnh báo \texttt{PWM PF8}.
+        \item \textbf{(2) Phân hệ Đo lường tương tự 5 kênh \texttt{ADC1}:} Lấy mẫu 12-bit cảm biến nhiệt \texttt{LM35} (\texttt{PC2}), biến trở giả lập tải trọng \texttt{VR1} (\texttt{PC1}), quang trở \texttt{LDR} (\texttt{PC0}), điện áp nguồn \texttt{PB0} và dòng tải \texttt{PB1}.
+        \item \textbf{(3) Phân hệ Bus HMI dùng chung \texttt{SPI1} / Lưu trữ \texttt{I2C1} / Flash \texttt{SPI2}:} Quét 4 LED 7 đoạn cùng 16 phím ma trận 4$\times$4 qua \texttt{SPI1}; giao tiếp đồng hồ thời gian thực \texttt{DS3231} (\texttt{0x68}) và hộp đen \texttt{AT24C512} (\texttt{0x50}) qua \texttt{I2C1}; truy xuất Flash \texttt{W25Q64FV} qua \texttt{SPI2}.
+        \item \textbf{(4) Phân hệ Truyền thông phân tán \texttt{CAN1} \& \texttt{USART1 RS232}:} Truyền thông công nghiệp vi sai \texttt{bxCAN1} tốc độ \texttt{500~kbps} qua IC \texttt{TJA1050} (\texttt{PB8/PB9}) giữa tủ cabin và sảnh tầng, đồng thời giao tiếp PC Shell CLI và luồng \texttt{\$TWIN} qua \texttt{USART1} (\texttt{PA9/PA10}).
+    \end{itemize}
+    \item \textbf{Định vị vật lý trên bo mạch thực tế (Hình~\ref{fig:bkit_map}):} Vị trí chính xác của 13 cụm linh kiện ngoại vi cùng 4 cụm công tắc gạt DIP Switch (\texttt{SW2, SW11, SW12, SW13}) phục vụ công tác đấu nối, kiểm tra tín hiệu và trình diễn được đánh dấu trực quan trên sơ đồ bo mạch thật.
+    \item \textbf{Phân hoạch bộ nhớ, định thời hệ thống và cơ chế bảo vệ phần cứng:} Tổng dung lượng firmware biên dịch chỉ chiếm \texttt{104\,112~Bytes} (\texttt{9.93\%} Flash) và \texttt{28\,608~Bytes} (\texttt{21.83\%} SRAM chính \texttt{128~KB}, còn nguyên \texttt{64~KB CCM}). Hệ thống tích hợp bộ giám sát độc lập \textbf{IWDG} (\texttt{2500~ms}), bộ đếm chu kỳ phần cứng \texttt{DWT} (\texttt{168~MHz}) đo trực tiếp độ trễ ngắt \texttt{EXTI}, cùng cổng nạp/gỡ lỗi \textbf{ST-LINK} (\texttt{SWD}).
+\end{itemize}
+Nhờ cách tổ chức phân tách rạch ròi giữa tầng cách ly quang công nghiệp, đường truyền vi sai \texttt{CAN} và các bus chia sẻ \texttt{SPI1/I2C1} ở mức phần cứng, bo mạch \textbf{BKIT ARM4} vừa khai thác tối đa ngoại vi tích hợp sẵn vừa bảo đảm độ tin cậy và thời hạn đáp ứng an toàn dưới \texttt{1~ms} (chi tiết bố trí linh kiện ở Hình~\ref{fig:bkit_map} và sơ đồ khối ở Hình~\ref{fig:sys_arch}).
+
+
+
+\begin{figure}[H]
+\centering
+\input{figures/fig_sys_arch}
+\caption{Sơ đồ khối kiến trúc kết nối phần cứng trung tâm \texttt{STM32F407ZGT6} (BKIT ARM4) và các phân hệ ngoại vi}
+\label{fig:sys_arch}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{image/bkit_arm4_project_map.png}
+\caption{Sơ đồ định vị thực tế 13 cụm ngoại vi cốt lõi và cấu hình DIP Switch trên bo mạch BKIT ARM4}
+\label{fig:bkit_map}
+\end{figure}
+
+\newpage
+\subsection{Phân tích Nguyên lý Giao tiếp 4 Phân hệ Ngoại vi trên Kit}
+Nguyên lý kết nối phần cứng, mức điện áp và cơ chế phân xử bus của 4 phân hệ gồm:
+
+\subsubsection{Phân hệ An toàn Cách ly Quang (\texttt{X0..X3}, \texttt{Y0..Y1}) và Còi xung \texttt{PWM PF8}}
+\begin{itemize}[nosep]
+    \item \textbf{Ngõ vào cách ly quang \texttt{Opto In X0..X3} (\texttt{PA6, PA7, PC4, PC5}):}
+    \begin{itemize}[nosep]
+        \item \textit{Cách ly và mức logic:} Tín hiệu công tắc và cảm biến đi qua tầng ghép quang \textit{optocoupler} giúp cách ly điện áp công nghiệp và chống nhiễu xung khỏi các chân vi điều khiển; ngõ vào cấu hình điện trở kéo lên nội và tích cực mức thấp, giữ mức cao ổn định khi hở mạch.
+        \item \textit{Ngắt cứng \texttt{EXTI6/7} (\texttt{X0, X1}):} Hai chân \texttt{X0 (PA6 -- Kẹt cửa)} và \texttt{X1 (PA7 -- E-Stop)} cấu hình ngắt ngoài theo sườn tích cực, lập tức chụp giá trị bộ đếm chu kỳ phần cứng \texttt{DWT} trước khâu lọc rung tiếp điểm \texttt{40~ms} để định lượng độ trễ phần cứng ở mức micro-giây.
+        \item \textit{Đọc định kỳ \texttt{X2/X3}:} Chân \texttt{X3 (PC5)} nối công tắc quá tải cơ khí được tác vụ giám sát an toàn lấy mẫu mỗi \texttt{100~ms} và hợp logic (OR) cùng ngưỡng cân \texttt{VR1} ($\ge 800\text{ kg}$), còn \texttt{X2 (PC4)} dự phòng cho cảm biến hành trình tầng.
+    \end{itemize}
+    \item \textbf{Ngõ ra cách ly quang \texttt{Y0/Y1} (\texttt{PE5/PE6}) và \texttt{LED3} (\texttt{PE4}):}
+    \begin{itemize}[nosep]
+        \item \textit{Điều khiển động cơ kéo:} Hai ngõ ra tích cực mức cao cách ly quang để kích rơ-le chiều \textbf{LÊN (\texttt{Y0 -- PE5})} và \textbf{XUỐNG (\texttt{Y1 -- PE6})}; mạch và logic điều khiển luôn áp dụng khóa liên động kép, tự động ngắt cả hai chân về mức \texttt{0} nếu xuất hiện lệnh xung đột.
+        \item \textit{Đèn nhịp hệ thống (\texttt{PE4}):} \texttt{LED3} đóng vai đèn nhịp giám sát trực quan trạng thái vận hành, nháy chậm chu kỳ \texttt{800~ms} khi cabin làm việc bình thường và chuyển sang nháy nhanh \texttt{200~ms} ngay khi hệ thống phát sinh báo cháy hoặc sự cố an toàn.
+    \end{itemize}
+    \item \textbf{Còi cảnh báo \texttt{PWM PF8} (\texttt{TIM13\_CH1}):}
+    \begin{itemize}[nosep]
+        \item \textit{Cấu hình bộ định thời:} Chân \texttt{PF8} được ánh xạ sang chức năng thay thế \texttt{AF9} nối với \texttt{TIM13\_CH1}; xung nhịp timer trên bus \texttt{APB1} đạt \texttt{84~MHz}, qua bộ chia tần \texttt{/84} tạo chuẩn đếm \texttt{1~MHz} ($1~\mu\text{s/tick}$) để sinh dải tần chính xác.
+        \item \textit{Phát âm không chặn:} Xuất xung vuông chu kỳ nhiệm vụ \texttt{50\%} giúp còi thụ động đạt âm lượng cực đại theo 5 âm báo chuẩn lưu trong Flash (\texttt{1.5..3.0~kHz}), có khóa \textit{mutex} đồng bộ truy cập và tự ngắt theo nhịp định thời không chặn trên tác vụ giao diện.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Phân hệ Đo lường Tương tự 5 Kênh (\texttt{ADC1 12-bit})}
+Bộ chuyển đổi \texttt{ADC1} vận hành ở chế độ lấy mẫu đồng bộ, độ phân giải \texttt{12-bit} ($0..4095$) với điện áp tham chiếu nội ($V_{\text{REF}} = 3300\text{ mV}$, bước lượng tử $V_{\text{LSB}} \approx 0.806\text{ mV}$), độ lợi $1\times$ và bộ chia xung nhịp \texttt{/4}:
+\begin{itemize}[nosep]
+    \item \textbf{Cảm biến nhiệt độ \texttt{LM35} (\texttt{PC2 -- ADC1\_IN12}):} Tuân theo đặc tuyến tuyến tính chuẩn $10\text{ mV}/^\circ\text{C}$, được quy đổi trực tiếp từ điện áp \texttt{mV} sang đơn vị nguyên $0.1^\circ\text{C}$ ($1\text{ mV} \equiv 0.1^\circ\text{C}$, số học dấu phẩy tĩnh), tránh chi phí dấu phẩy động mà vẫn bảo đảm theo dõi chính xác ngưỡng cháy $55.0^\circ\text{C}/48.0^\circ\text{C}$.
+    \item \textbf{Biến trở tải trọng \texttt{VR1} (\texttt{PC1 -- ADC1\_IN11}):} Quy đổi tuyến tính dải điện áp $0..3300\text{ mV}$ theo tỉ lệ $m_{\text{kg}} = (V_{\text{VR1}} / 3300) \times 1000\text{ kg}$ thành tải trọng giả lập $0..1000\text{ kg}$ thay thế \textit{loadcell}, kết hợp trễ hồi (\textit{hysteresis}) để chặn đóng cửa khi vượt ngưỡng $800\text{ kg}/750\text{ kg}$.
+    \item \textbf{Ba kênh đo giám sát bổ trợ (\texttt{PC0, PB0, PB1}):} Thu nhận trực tiếp điện áp \texttt{mV} ($0..3300\text{ mV}$) từ quang trở \texttt{LDR (PC0 -- IN10)}, kênh đo áp nguồn bus (\texttt{PB0 -- IN8}) và dòng tải (\texttt{PB1 -- IN9}), phục vụ tự kiểm tra độ ổn định mạch tương tự và xuất thông số chẩn đoán qua giao diện dòng lệnh trên UART.
+\end{itemize}
+
+\subsubsection{Phân hệ Bus Dùng chung \texttt{SPI1}, \texttt{I2C1} và NOR Flash \texttt{SPI2}}
+Đây là cụm ngoại vi chia sẻ bus vật lý, đòi hỏi đồng bộ chặt chẽ ở cả tầng phần cứng lẫn hệ điều hành thời gian thực (Hình~\ref{fig:shared_buses}):
+\begin{itemize}[nosep]
+    \item \textbf{Bus \texttt{SPI1} dùng chung (\texttt{PB3 SCK}, \texttt{PB4 MISO}, \texttt{PB5 MOSI}, \texttt{1~MHz}):}
+    \begin{itemize}[nosep]
+        \item \textit{Nhánh xuất LED 7 đoạn:} Sử dụng \textbf{2 $\times$ \texttt{74HC595}} mắc nối tiếp nhận \texttt{16-bit} dữ liệu (byte mã đoạn \texttt{a..g} và byte chọn vị trí LED) truyền bit có trọng số cao trước (\textit{MSB-first}), chốt đồng loạt bằng xung sườn lên \texttt{2~$\mu$s} trên chân \texttt{PG6 (LD\_LATCH)} ở tần số quét \texttt{100~Hz} để hiển thị tầng, mũi tên \texttt{UP/dn}, \texttt{FE} và \texttt{Err}.
+        \item \textit{Nhánh nhập ma trận phím 4$\times$4:} Sử dụng \textbf{2 $\times$ \texttt{74HC165}} đọc 16 phím tích cực mức thấp; trước mỗi lượt quét chu kỳ \texttt{50~ms}, vi điều khiển phát xung nạp song song qua chân \texttt{PD3 (BTN\_LOAD)} rồi dịch 2 byte về \texttt{MISO (PB4)}, tự động lọc bỏ trạng thái nghỉ (\texttt{0xFFFF}) và nhiễu thả nổi (\texttt{0x0000}).
+        \item \textit{Phân xử bus:} Do hai mạch thanh ghi dịch dùng chung đường xung nhịp \texttt{SCK (PB3)}, mọi giao dịch trên \texttt{SPI1} đều được tuần tự hóa bằng khóa \textit{mutex} phân xử bus có kế thừa độ ưu tiên (\textit{Priority Inheritance}), ngăn chặn hoàn toàn hiện tượng lem LED hay sai mã phím khi tác vụ quét đồng thời.
+    \end{itemize}
+    \item \textbf{Bus \texttt{I2C1} dùng chung (\texttt{PB6 SCL}, \texttt{PB7 SDA}, \textit{Fast-Mode} \texttt{400~kHz}):}
+    \begin{itemize}[nosep]
+        \item \textit{Đồng hồ \texttt{DS3231 RTC} (\texttt{0x68}):} Tích hợp pin dự phòng CR2032 giúp duy trì giờ chuẩn ngay cả khi mất nguồn chính; vi điều khiển đọc liên tiếp các thanh ghi \texttt{0x00..0x06} và giải mã từ dạng nhị phân thập phân (\texttt{BCD}) sang nhị phân thuần để gắn dấu thời gian cho từng bản ghi sự cố.
+        \item \textit{Hộp đen \texttt{AT24C512 EEPROM} (\texttt{0x50}):} Dung lượng \texttt{64~KB} (\texttt{65\,536 Bytes}) tổ chức theo trang \texttt{128 Bytes}; vùng đầu (\texttt{0x0000}) lưu khối tiêu đề kiểm tra \texttt{CRC32}, còn vùng dữ liệu (\texttt{0x0080}) lưu bộ đệm vòng 32 bản ghi bước \texttt{32 Bytes} kèm \texttt{CRC16} nhằm bảo toàn nhật ký khi mất điện mà không ghi vượt ranh giới trang.
+        \item \textit{Phân xử bus:} Hai thiết bị dùng chung đường truyền cực máng hở \texttt{PB6/PB7} nối điện trở kéo lên $R_{p1}, R_{p2}$ về nguồn \texttt{+3.3~V}, đồng thời mọi thao tác đọc/ghi thời gian hay hộp đen đều được tuần tự hóa qua khóa \textit{mutex} riêng của bus \texttt{I2C1} để tránh xung đột khung truyền.
+    \end{itemize}
+    \newpage
+    \item \textbf{Bus \texttt{SPI2} độc lập (\texttt{PB12..PB15}, \texttt{2~MHz}):}
+    \begin{itemize}[nosep]
+        \item \textit{NOR Flash \texttt{W25Q64FV} (\texttt{8~MB}):} Vận hành trên bus \texttt{SPI2} tách biệt qua chân chọn chip \texttt{PB12} tích cực mức thấp nên không tranh chấp băng thông với nhánh HMI; khi khởi tạo hoặc kiểm tra phần cứng, firmware phát lệnh \texttt{0x9F} đọc về mã \texttt{JEDEC ID 0xEF 0x40 0x17} xác nhận kết nối.
+    \end{itemize}
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\input{figures/fig_shared_buses}
+\caption{Sơ đồ nguyên lý ghép nối và phân xử bus dùng chung \texttt{SPI1} (\texttt{74HC595} / \texttt{74HC165}) và \texttt{I2C1} (\texttt{DS3231} / \texttt{AT24C512})}
+\label{fig:shared_buses}
+\end{figure}
+
+\subsubsection{Phân hệ Truyền thông Phân tán \texttt{CAN1} và Giao tiếp \texttt{USART1 RS232}}
+\begin{itemize}[nosep]
+    \item \textbf{Mạng \texttt{bxCAN1} tốc độ \texttt{500~kbps} (\texttt{PB8 CAN1\_RX}, \texttt{PB9 CAN1\_TX}):}
+    \begin{itemize}[nosep]
+        \item \textit{Giao tiếp vi sai chống nhiễu:} Bộ điều khiển \texttt{bxCAN1} chuẩn \texttt{CAN 2.0A} (ID 11-bit) xuất tín hiệu qua bộ thu phát vi sai \textbf{\texttt{TJA1050}} (đóng \texttt{SW13 = ON}) ra cặp dây \texttt{CANH / CANL} có trở đầu cuối \texttt{120~$\Omega$}, điểm lấy mẫu $87.5\%$ chu kỳ bit giúp miễn nhiễu công nghiệp.
+        \item \textit{Chế độ vận hành linh hoạt:} Chuyển đổi linh hoạt giữa tự kiểm 1 kit (\texttt{LOOPBACK}) và nối mạng 2 kit (\texttt{NORMAL}: \texttt{CABIN} $\leftrightarrow$ \texttt{HALL}); bộ lọc phần cứng thu hẹp 3 dải ID trọng yếu (\texttt{0x080}, \texttt{0x100..0x10F}, \texttt{0x200..0x3FF}), hỗ trợ khung \texttt{RTR} và giám sát \texttt{TEC/REC} kèm cơ chế phục hồi lỗi bus.
+    \end{itemize}
+    \item \textbf{Cổng nối tiếp \texttt{USART1 RS232} (\texttt{PA9 TX}, \texttt{PA10 RX}, \texttt{115200 8N1}):}
+    \begin{itemize}[nosep]
+        \item \textit{Tầng chuyển mức:} Chuyển đổi mức áp \texttt{3.3~V TTL} sang chuẩn đối xứng RS232 qua IC \textbf{\texttt{MAX3232}} ra đầu DB9 về máy tính; gạt \texttt{SW12 = OFF} để cô lập hoàn toàn nhánh RS485 dùng chung chân truyền nhận.
+        \item \textit{Kênh song công Shell \& Telemetry:} Đảm nhiệm đồng thời giao diện dòng lệnh \textbf{Zephyr Shell CLI} phục vụ chẩn đoán ngoại vi và luồng bản tin JSON \texttt{\$TWIN} mỗi \texttt{200~ms} đồng bộ trạng thái thời gian thực lên \textbf{PC Digital Twin}.
+    \end{itemize}
+\end{itemize}
+
+\clearpage
+\subsection{Thiết kế Devicetree (\texttt{app.overlay}) và Giải quyết Xung đột Chân}
+Bo mạch \textbf{BKIT ARM4} dùng vi điều khiển \texttt{STM32F407ZGT6} (vỏ \texttt{LQFP144}), trong khi bo chuẩn gần nhất của Zephyr RTOS là \texttt{stm32f4\_disco} (\texttt{STM32F407VGT6}, vỏ \texttt{LQFP100}). Do khác biệt số chân I/O và ngoại vi hàn sẵn trên bo Discovery (âm thanh \texttt{cs43l22@4a}, \texttt{usbotg\_fs}, \texttt{leds}, \texttt{gpio\_keys}), việc giữ nguyên cây thiết bị gốc sẽ gây xung đột chân. Tệp phủ \texttt{app.overlay} được viết để chuyển hướng \texttt{chosen} (\texttt{\&usart1}, \texttt{\&can1}), chuẩn hóa \texttt{aliases} (\texttt{led0..2}, \texttt{sw0..3}, \texttt{watchdog0}, \texttt{eeprom-0}, \texttt{pwm-buzzer}) và xử lý 3 nhóm xung đột chính (Hình~\ref{fig:dt_conflict}):
+\begin{enumerate}[nosep]
+    \item \textbf{Tách chân \texttt{PA6} khỏi \texttt{\&adc1} để dành cho ngắt cứng \texttt{X0}:}
+    \begin{itemize}[nosep]
+        \item \textit{Xung đột gốc:} Trên \texttt{stm32f4\_disco}, \texttt{pinctrl-0} mặc định của \texttt{\&adc1} ánh xạ cả \texttt{adc1\_in6\_pa6}, trong khi kit \textbf{BKIT ARM4} nối \texttt{PA6} với ngõ vào quang \texttt{X0} đòi hỏi ngắt sườn phát hiện kẹt cửa tức thời.
+        \item \textit{Can thiệp \texttt{app.overlay}:} Ghi đè \texttt{pinctrl-0} của \texttt{\&adc1} chỉ giữ 5 kênh (\texttt{PB0, PB1, PC0, PC1, PC2}), khai báo 5 nút \texttt{channel@8..c} (\texttt{12-bit}, \texttt{ADC\_REF\_INTERNAL}, \texttt{SYNC}), tắt \texttt{gpio\_keys} mặc định và gán \texttt{PA6} cho \texttt{bkit\_in\_x0} (\texttt{sw0}).
+        \item \textit{Kết quả:} Giải phóng hoàn toàn \texttt{PA6} làm ngắt sườn \texttt{EXTI6} cho cảm biến kẹt cửa \texttt{X0}, tách bạch khỏi chu kỳ quét 5 kênh của \texttt{ADC1}.
+    \end{itemize}
+    \item \textbf{Tách \texttt{\&i2c1} khỏi chân \texttt{PB9} để giải phóng \texttt{CAN1\_TX}:}
+    \begin{itemize}[nosep]
+        \item \textit{Xung đột gốc:} Mặc định \texttt{\&i2c1} dùng chân \texttt{i2c1\_sda\_pb9} cho codec âm thanh \texttt{cs43l22@4a}, trùng trực tiếp với chân phát \texttt{CAN1\_TX (PB9)} nối IC \texttt{TJA1050}, đồng thời tồn tại nhiều nút ngoại vi dư thừa dễ tranh chấp chân.
+        \item \textit{Can thiệp \texttt{app.overlay}:} Chuyển \texttt{\&i2c1} dùng \texttt{I2C\_BITRATE\_FAST} (\texttt{400~kHz}) tại cặp \texttt{PB6 (SCL) / PB7 (SDA)}, khai báo \texttt{eeprom@50} (\texttt{atmel,at24}, \texttt{64~KB}, trang \texttt{128~B}), tắt các nút \texttt{\&audio\_codec}, \texttt{\&can2}, \texttt{\&usart2}, \texttt{\&i2s3}, \texttt{\&usbotg\_fs}, \texttt{\&timers2/4}, \texttt{leds}, \texttt{pwmleds}; và gán \texttt{\&can1} ra \texttt{PB8/PB9} (\texttt{500~kbps}, \texttt{sample-point = <875>}).
+        \item \textit{Kết quả:} Bus vi sai \texttt{bxCAN1} (\texttt{PB8/PB9}) và \texttt{I2C1} (\texttt{PB6/PB7}) phục vụ \texttt{DS3231 RTC} cùng \texttt{AT24C512} vận hành song song không đụng chân.
+    \end{itemize}
+    \item \textbf{Kích hoạt \texttt{GPIOF/G}, nút \texttt{zephyr,user} và bổ sung \texttt{pinctrl} cho \texttt{PF8}:}
+    \begin{itemize}[nosep]
+        \item \textit{Giới hạn gốc:} Vỏ \texttt{LQFP100} không khai báo Port F và Port G nên cây thiết bị gốc thiếu định tuyến chân còi \texttt{PF8 (TIM13\_CH1)} và chốt LED 7 đoạn \texttt{PG6 (LD\_LATCH)}.
+        \item \textit{Can thiệp \texttt{app.overlay}:} Bật tường minh \texttt{\&gpiof}, \texttt{\&gpiog}, \texttt{\&timers13} (\texttt{st,prescaler = <83>}) và \texttt{\&iwdg}; tạo mới \texttt{tim13\_ch1\_pf8} (\texttt{STM32\_PINMUX('F', 8, AF9)}) cho \texttt{bkit\_buzzer}; đồng thời gom 5 \texttt{io-channels} và 3 chân điều khiển (\texttt{ld-latch-gpios = <\&gpiog 6>}, \texttt{btn-load-gpios = <\&gpiod 3>}, \texttt{w25q-cs-gpios = <\&gpiob 12>}) vào \texttt{zephyr,user}.
+        \item \textit{Kết quả:} Khai thác trọn vẹn tài nguyên \texttt{LQFP144} gồm còi \texttt{PWM13 (PF8)}, chốt \texttt{74HC595 (PG6)}, nạp phím \texttt{74HC165 (PD3)} và chọn NOR Flash \texttt{PB12}.
+    \end{itemize}
+\end{enumerate}
+
+\clearpage
+\begin{figure}[H]
+\centering
+\input{figures/fig_dt_conflict}
+\caption{Kiến trúc ánh xạ Devicetree giải quyết 3 xung đột phần cứng từ \texttt{stm32f4\_disco} (\texttt{LQFP100}) sang BKIT ARM4 (\texttt{LQFP144})}
+\label{fig:dt_conflict}
+\end{figure}
+
+Đoạn trích cấu hình từ \texttt{app.overlay} dưới đây minh họa trực tiếp cách phân giải xung đột \texttt{pinctrl} và khai báo thiết bị \texttt{AT24C512} / \texttt{bxCAN1}:
+
+\begin{lstlisting}[language=C, caption={Trích đoạn cấu hình giải quyết xung đột chân và bus ngoại vi trong app.overlay}]
+&gpiof { status = "okay"; };  &gpiog { status = "okay"; };
+&pinctrl {
+    tim13_ch1_pf8: tim13_ch1_pf8 { pinmux = <STM32_PINMUX('F',8,AF9)>; };
+};
+/* Go bo adc1_in6_pa6 de giai phong PA6 cho ngat cung EXTI6 (X0) */
+&adc1 {
+    pinctrl-0 = <&adc1_in8_pb0 &adc1_in9_pb1
+                 &adc1_in10_pc0 &adc1_in11_pc1 &adc1_in12_pc2>;
+    pinctrl-names = "default"; status = "okay";
+};
+&audio_codec { status = "disabled"; };
+/* Chuyen I2C1 ve PB6/PB7 de tranh xung dot PB9 voi CAN1_TX */
+&i2c1 {
+    pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+    clock-frequency = <I2C_BITRATE_FAST>; status = "okay";
+    at24_eeprom: eeprom@50 {
+        compatible = "atmel,at24"; reg = <0x50>;
+        size = <65536>; pagesize = <128>;
+    };
+};
+/* CAN1 500 kbps qua TJA1050 (yeu cau SW13 = ON) */
+&can1 {
+    pinctrl-0 = <&can1_rx_pb8 &can1_tx_pb9>;
+    bitrate = <500000>; sample-point = <875>; status = "okay";
+};
+\end{lstlisting}
+
+\clearpage
+\subsection{Cấu hình Công tắc DIP Switch và Bảng Ánh xạ Chân Tổng hợp}
+Trước khi cấp nguồn và nạp firmware xuống kit \textbf{BKIT ARM4}, 4 công tắc gạt DIP Switch cần được đặt đúng vị trí quy định ở Bảng~\ref{tab:switches} để đấu nối chính xác mạch nạp và bộ thu phát \texttt{CAN}. Bảng~\ref{tab:pinmap} tổng hợp toàn bộ ánh xạ chân \texttt{STM32F407ZGT6} và driver Zephyr tương ứng.
+
+\begingroup
+\renewcommand{\arraystretch}{1.14}%
+\setlength{\tabcolsep}{4.5pt}%
+\fontsize{8.3}{10.4}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|C{2.0cm}|C{2.0cm}|Y|}
+\caption{Cấu hình 4 cụm công tắc DIP Switch bắt buộc trên bo mạch BKIT ARM4}\label{tab:switches}\\
+\hline
+\rowcolor{tablehead}
+\thcell{Công tắc} & \thcell{Trạng thái} & \thcell{Tác dụng phần cứng trên bo mạch BKIT ARM4} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{Công tắc} & \thcell{Trạng thái} & \thcell{Tác dụng phần cứng trên bo mạch BKIT ARM4} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\texttt{SW11} & \textbf{ON} & Kết nối mạch nạp/gỡ lỗi tích hợp \textbf{ST-LINK} với chân \texttt{SWDIO/SWCLK} của \texttt{STM32F407}. \\
+\hline
+\rowcolor{roweven}
+\texttt{SW13} & \textbf{ON} & Nối cặp chân \texttt{PB8 (CAN1\_RX) / PB9 (CAN1\_TX)} vào IC thu phát vi sai \textbf{TJA1050}. \\
+\hline
+\texttt{SW12} & \textbf{OFF} & Cách ly khối thu phát RS485 để tránh xung đột tải trên đường truyền nối tiếp. \\
+\hline
+\rowcolor{roweven}
+\texttt{SW2} & \textbf{OFF} & Ngắt kết nối UART từ cổng USB-C sang module ESP8266 khi làm việc trực tiếp với STM32. \\
+\end{xltabular}
+\endgroup
+
+\begingroup
+\renewcommand{\arraystretch}{1.12}%
+\setlength{\tabcolsep}{4.5pt}%
+\fontsize{8.1}{10.1}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|L{2.6cm}|L{2.8cm}|L{3.0cm}|Y|}
+\caption{Bảng ánh xạ chân vi điều khiển STM32F407ZGT6 và Driver Zephyr trong \texttt{app.overlay}}\label{tab:pinmap}\\
+\hline
+\rowcolor{tablehead}
+\thcell{Ngoại vi / Bus} & \thcell{Chân MCU} & \thcell{Driver / Alias} & \thcell{Vai trò trong Hệ thống Thang máy} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{Ngoại vi / Bus} & \thcell{Chân MCU} & \thcell{Driver / Alias} & \thcell{Vai trò trong Hệ thống Thang máy} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\texttt{LED3 Debug} & \texttt{PE4} & \texttt{gpio-leds} (\texttt{led0}) & Nháy Heartbeat RTOS (chậm bình thường, chớp nhanh khi lỗi). \\
+\hline
+\rowcolor{roweven}
+\texttt{Opto Out Y0/Y1} & \texttt{PE5 / PE6} & \texttt{gpio-leds} (\texttt{led1/2}) & Rơ-le quang điều khiển động cơ \textbf{CHẠY LÊN (Y0)} / \textbf{CHẠY XUỐNG (Y1)}. \\
+\hline
+\texttt{Opto In X0..X3} & \texttt{PA6, PA7, PC4, PC5} & \texttt{gpio-keys} (\texttt{sw0..sw3}) & \texttt{X0}: Chống kẹt cửa (EXTI6); \texttt{X1}: E-Stop (EXTI7); \texttt{X2}: Tầng; \texttt{X3}: Quá tải. \\
+\hline
+\rowcolor{roweven}
+\texttt{Buzzer PWM} & \texttt{PF8} (\texttt{TIM13\_CH1}) & \texttt{pwm-leds} (\texttt{AF9}) & Phát âm báo đa tần số \texttt{1.5..3.0 kHz} không chặn (\textit{non-blocking}). \\
+\hline
+\texttt{ADC1 Sensors} & \texttt{PC2, PC1, PC0} & \texttt{adc\_dt} (\texttt{IN12,11,10}) & \texttt{PC2}: Nhiệt độ LM35 ($10~\text{mV}/^\circ\text{C}$); \texttt{PC1}: Biến trở tải \texttt{VR1}; \texttt{PC0}: Quang trở. \\
+\hline
+\rowcolor{roweven}
+\texttt{ADC1 Power} & \texttt{PB0, PB1} & \texttt{adc\_dt} (\texttt{IN8, IN9}) & Giám sát điện áp đường nguồn (\texttt{PB0}) và dòng tải tiêu thụ (\texttt{PB1}). \\
+\hline
+\texttt{Shared SPI1} & \texttt{PB3/4/5 + PG6/PD3} & \texttt{spi\_stm32} (Mutex bus) & Quét 4 LED 7 đoạn (\texttt{2$\times$74HC595}, \texttt{PG6}) và 16 phím 4$\times$4 (\texttt{2$\times$74HC165}, \texttt{PD3}). \\
+\hline
+\rowcolor{roweven}
+\texttt{Shared I2C1} & \texttt{PB6 / PB7} & \texttt{i2c\_stm32} (Mutex bus) & Đọc đồng hồ thực \texttt{DS3231} (\texttt{0x68}) và ghi hộp đen \texttt{AT24C512} (\texttt{0x50}). \\
+\hline
+\texttt{SPI2 Flash} & \texttt{PB12..PB15} & \texttt{spi\_stm32} (\texttt{w25q-cs}) & Kiểm tra nhận dạng chip NOR Flash \texttt{W25Q64FV} (JEDEC ID \texttt{0xEF 0x40 0x17}). \\
+\hline
+\rowcolor{roweven}
+\texttt{CAN1 Bus} & \texttt{PB8 / PB9} & \texttt{st,stm32-bxcan} & Mạng CAN 500 kbps (\texttt{TJA1050}), hỗ trợ \texttt{LOOPBACK} 1 kit và \texttt{NORMAL} 2 kit. \\
+\hline
+\texttt{USART1 RS232} & \texttt{PA9 / PA10} & \texttt{uart\_stm32} (115200) & Giao diện dòng lệnh Zephyr Shell CLI \& luồng telemetry \texttt{\$TWIN} lên PC. \\
+\hline
+\end{xltabular}
+\endgroup

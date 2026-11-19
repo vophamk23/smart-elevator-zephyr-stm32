@@ -1,0 +1,129 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    umlstate/.style={
+        rectangle split, rectangle split parts=2,
+        rectangle split part align={center, left},
+        draw=black!85, fill=white, line width=0.8pt,
+        rounded corners=3pt, font=\scriptsize, inner sep=3.5pt,
+        rectangle split part fill={black!4, white}
+    },
+    umlemerg/.style={
+        rectangle split, rectangle split parts=2,
+        rectangle split part align={center, left},
+        draw=tablehead, fill=white, line width=1.05pt,
+        rounded corners=3pt, font=\scriptsize, inner sep=4pt,
+        rectangle split part fill={tablehead!12, white}
+    }
+]
+    % === SUPERSTATE: NORMAL OPERATION ===
+    \draw[draw=black!70, dashed, line width=0.75pt, rounded corners=4pt, fill=black!1]
+        (-0.4, -4.55) rectangle (16.6, 5.15);
+    \node[font=\scriptsize\bfseries, text=tablehead, anchor=west] at (-0.2, 4.82)
+        {SUPERSTATE: VẬN HÀNH BÌNH THƯỜNG \quad {\tiny\normalfont\itshape(Khóa liên động: \texttt{Y0/Y1 = 1} $\iff$ \texttt{door\_pos == CLOSED \&\& !estop})}};
+
+    % Initial pseudostate [*]
+    \fill[black!90] (0.0, 2.75) circle (3.2pt);
+
+    % Hang tren: INIT, IDLE_CLOSED, MOVING_UP, MOVING_DOWN
+    \node[umlstate, text width=2.25cm] (S_INIT) at (1.65, 2.75) {
+        \textbf{1. INIT}
+        \nodepart{second}
+        \tiny \texttt{floor = 1}\\
+        \tiny \texttt{door = CLOSED (0\%)}\\
+        \tiny \texttt{Y0 = 0, Y1 = 0}
+    };
+
+    \node[umlstate, text width=3.20cm, draw=tablehead, line width=1.0pt] (S_IDLE) at (5.55, 2.75) {
+        \textbf{2. IDLE\_CLOSED}
+        \nodepart{second}
+        \tiny \texttt{entry / Y0=0, Y1=0, dir=IDLE}\\
+        \tiny \texttt{LED 7Seg: F- [floor]}\\
+        \tiny \texttt{do / elev\_sched\_pick\_next()}
+    };
+
+    \node[umlstate, text width=2.95cm] (S_UP) at (10.35, 2.75) {
+        \textbf{6. MOVING\_UP}
+        \nodepart{second}
+        \tiny \texttt{entry / Y0(PE5)=1, Y1=0}\\
+        \tiny \texttt{LED 7Seg: UP [\_/-/¯] [f]}\\
+        \tiny \texttt{do / +1 tầng mỗi 1500 ms}
+    };
+
+    \node[umlstate, text width=3.55cm] (S_DN) at (14.65, 2.75) {
+        {\scriptsize\textbf{7. MOVING\_DOWN}}
+        \nodepart{second}
+        \tiny \texttt{entry / Y0=0, Y1(PE6)=1}\\
+        \tiny \texttt{LED 7Seg: dn [¯/-/\_] [f]}\\
+        \tiny \texttt{do / -1 tầng mỗi 1500 ms}
+    };
+
+    % Hang duoi trong Superstate: Chu trinh cua
+    \node[umlstate, text width=3.55cm] (S_OPENING) at (2.15, -1.85) {
+        \textbf{3. DOOR\_OPENING}
+        \nodepart{second}
+        \tiny \texttt{entry / Y0=0, Y1=0, Còi arrived}\\
+        \tiny \texttt{do / door\_pct: 0 -> 100\% (700 ms)}
+    };
+
+    \node[umlstate, text width=3.85cm] (S_OPEN) at (7.90, -1.85) {
+        \textbf{4. DOOR\_OPEN}
+        \nodepart{second}
+        \tiny \texttt{entry / Đếm giữ cửa 1800 ms}\\
+        \tiny \texttt{do / Giữ mở nếu \texttt{overload >= 800kg}}\\
+        \tiny \texttt{     hoặc \texttt{fire \&\& floor == 1}}
+    };
+
+    \node[umlstate, text width=3.55cm] (S_CLOSING) at (13.85, -1.85) {
+        \textbf{5. DOOR\_CLOSING}
+        \nodepart{second}
+        \tiny \texttt{do / door\_pct: 100 -> 0\% (700 ms)}\\
+        \tiny \texttt{guard / Theo dõi \texttt{EXTI6 X0} (\texttt{PA6})}
+    };
+
+    % === 2 TRANG THAI KHAN CAP (UU TIEN TOI CAO) ===
+    \node[umlemerg, text width=7.1cm] (S_FIRE) at (3.65, -6.50) {
+        \textbf{8. FIRE\_EVAC (Sơ tán Hỏa hoạn Khẩn cấp)}
+        \nodepart{second}
+        \tiny \texttt{trigger / LM35 >= 55.0°C} | Phím \texttt{10} | CAN \texttt{0x080}\\
+        \tiny \texttt{do / Xóa hàng đợi, đóng cửa, chạy thẳng Tầng 1 \& Mở cửa}\\
+        \tiny \texttt{LED: FE [f] | Thoát khi \texttt{EV\_CLEAR} \&\& LM35 <= 48.0°C}
+    };
+
+    \node[umlemerg, text width=7.3cm] (S_FAIL) at (12.35, -6.50) {
+        \textbf{9. FAIL\_SAFE (Khóa An toàn / Dừng Khẩn cấp)}
+        \nodepart{second}
+        \tiny \texttt{trigger / E-Stop X1 (PA7)} | Phím \texttt{11} | Đứt CAN \texttt{> 2000 ms}\\
+        \tiny \texttt{entry / Cắt ngay \texttt{Y0=0, Y1=0}; mở cửa nếu lỗi CAN}\\
+        \tiny \texttt{LED: Err [f] | Phục hồi khi \texttt{EV\_FAULT\_CLEAR} (Phím \texttt{12..15})}
+    };
+
+    % === CHUYEN TIEP HANG TREN ===
+    \draw[acadarr] (0.12, 2.75) -- (S_INIT.west);
+    \draw[acadarr] (S_INIT.east) -- node[acadlbl, above=2pt] {\tiny Boot OK} (S_IDLE.west);
+    \draw[acadarr] (S_IDLE.east) -- node[acadlbl, above=2pt] {\tiny\texttt{target>cur}} (S_UP.west);
+    \draw[acadarr] ($(S_IDLE.north)+(0.4,0)$) -- ++(0, 0.55) -| node[acadlbl, pos=0.25] {\tiny\texttt{target < cur} (Chạy xuống)} ($(S_DN.north)+(-0.2,0)$);
+
+    % === CHUYEN TIEP DI XUONG & QUAY VE (CAC DUONG CACH NHAU 0.55CM, KHONG CAT CHONG) ===
+    \draw[acadarr] (S_IDLE.south -| S_OPENING.north) -- node[acadlbl, pos=0.45] {\tiny\texttt{target == cur}} (S_OPENING.north);
+    \draw[acadarr] (S_UP.south) -- ++(0, -0.52) -| node[acadlbl, pos=0.25] {\tiny Chạm tầng cần dừng (\texttt{LOOK})} ($(S_OPENING.north)+(0.95,0)$);
+    \draw[acadarr] (S_DN.south) -- ++(0, -1.08) -| node[acadlbl, pos=0.18] {\tiny Chạm tầng đích} ($(S_OPENING.north)+(1.45,0)$);
+
+    \draw[acadarr] ($(S_CLOSING.north)+(-0.85,0)$) -- ++(0, 0.88) -| node[acadlbl, pos=0.25] {\tiny Đóng kín \texttt{0\%} (\texttt{700 ms})} ($(S_IDLE.south)+(0.85,0)$);
+
+    % === CHUYEN TIEP GIUA 3 TRANG THAI CUA ===
+    \draw[acadarr] (S_OPENING.east) -- node[acadlbl, above=2pt] {\tiny \texttt{700ms (100\%)}} (S_OPEN.west);
+    \draw[acadarr] (S_OPEN.east) -- node[acadlbl, above=2pt] {\tiny \texttt{1800ms \& <=750kg}} (S_CLOSING.west);
+
+    % === CUNG PHAN XA CHONG KET CUA X0 ===
+    \draw[acadarr, line width=0.9pt] ($(S_CLOSING.south)+(0,-0.02)$) -- ++(0, -0.82) -|
+        node[acadlbl, pos=0.25] {\textbf{Kẹt cửa \texttt{X0 (PA6)} / Phím \texttt{9} / Quá tải $\ge 800\text{ kg}$ $\rightarrow$ Đảo chiều mở cửa ngay!}}
+        ($(S_OPENING.south)+(0,-0.02)$);
+
+    % === CHUYEN TIEP KHAN CAP TU SUPERSTATE XUONG FIRE_EVAC / FAIL_SAFE ===
+    \draw[acadarr, draw=tablehead, line width=0.95pt] (1.65, -4.55) -- node[acadlbl] {\tiny\texttt{OVERHEAT / CAN 0x080}} (1.65, -5.52);
+    \draw[acaddash] (5.40, -5.52) -- node[acadlbl] {\tiny\texttt{CLEAR (<=48°C)}} (5.40, -4.55);
+
+    \draw[acadarr, draw=tablehead, line width=0.95pt] (10.35, -4.55) -- node[acadlbl] {\tiny\texttt{ESTOP\_X1 / CAN\_LOST}} (10.35, -5.52);
+    \draw[acaddash] (14.40, -5.52) -- node[acadlbl] {\tiny\texttt{CLEAR (Phím 12..15)}} (14.40, -4.55);
+\end{tikzpicture}%
+}

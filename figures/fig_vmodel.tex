@@ -1,0 +1,53 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % Nhan 2 nhanh
+    \node[font=\footnotesize\bfseries, text=tablehead] at (2.0, 7.55) {NHÁNH THIẾT KẾ (\textit{TOP-DOWN})};
+    \node[font=\footnotesize\bfseries, text=tablehead] at (14.8, 7.55) {NHÁNH KIỂM CHỨNG (\textit{BOTTOM-UP})};
+
+    % Nhanh trai: Thiet ke (Top-Down)
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (L1) at (2.0, 6.45)
+        {\textbf{1. Đặc tả Yêu cầu An toàn}\\[-1pt]
+         {\tiny \texttt{REQ-001..REQ-012} \& Thời hạn đáp ứng}};
+
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (L2) at (3.3, 4.65)
+        {\textbf{2. Kiến trúc Phần cứng \& DT}\\[-1pt]
+         {\tiny \texttt{BKIT ARM4} + \texttt{app.overlay} (\texttt{LQFP144})}};
+
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (L3) at (4.6, 2.85)
+        {\textbf{3. Thiết kế Chi tiết RTOS \& HSM}\\[-1pt]
+         {\tiny 7 Luồng tĩnh + HSM 9 trạng thái + \texttt{LOOK}}};
+
+    % Day chu V: Hien thuc (cach L3/R3 hon 1.3 cm theo chieu doc, khong bao gio chong canh)
+    \node[acadmcu, text width=6.2cm, minimum height=1.20cm] (BOT) at (8.4, 0.35)
+        {\textbf{4. Hiện thực Firmware C Phân lớp}\\[-1pt]
+         {\tiny 13 mô-đun (\texttt{BSP / Core / Comms / CLI}) -- \texttt{0} lỗi, \texttt{9.93\%} Flash}};
+
+    % Nhanh phai: Kiem chung (Bottom-Up)
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (R3) at (12.2, 2.85)
+        {\textbf{5. Kiểm thử Đơn vị \& Độ phủ HSM}\\[-1pt]
+         {\tiny Kiểm thử BSP \& Ma trận chuyển tiếp $9\times 9$}};
+
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (R2) at (13.5, 4.65)
+        {\textbf{6. Kiểm thử Tích hợp Bus \& Luồng}\\[-1pt]
+         {\tiny Phân xử Mutex \texttt{SPI1/I2C1} + \texttt{CAN 500kbps} + \texttt{IWDG}}};
+
+    \node[acadbox, text width=4.4cm, minimum height=1.15cm] (R1) at (14.8, 6.45)
+        {\textbf{7. Kiểm thử Hệ thống \& HIL}\\[-1pt]
+         {\tiny 12 kịch bản \texttt{TC-001..012} + PC Digital Twin}};
+
+    % Mui ten xuong nhanh trai
+    \draw[acadarr] (L1.south -| 0.5, 0) |- (L2.west);
+    \draw[acadarr] (L2.south -| 1.8, 0) |- (L3.west);
+    \draw[acadarr] (L3.south) |- (BOT.west);
+
+    % Mui ten len nhanh phai
+    \draw[acadarr] (BOT.east) -| (R3.south);
+    \draw[acadarr] (R3.east) -| ($(R2.south)+(1.4,0)$);
+    \draw[acadarr] (R2.east) -| ($(R1.south)+(1.4,0)$);
+
+    % Mui ten doi chieu ngang (Verification & Traceability)
+    \draw[acaddashbi] (L1.east) -- node[acadlbl] {\tiny Ma trận truy xuất RTM (\texttt{REQ} $\leftrightarrow$ \texttt{TC})} (R1.west);
+    \draw[acaddashbi] (L2.east) -- node[acadlbl] {\tiny Kiểm chứng giao diện ngoại vi \& bus} (R2.west);
+    \draw[acaddashbi] (L3.east) -- node[acadlbl] {\tiny Độ phủ HSM} (R3.west);
+\end{tikzpicture}%
+}

@@ -1,0 +1,132 @@
+\section{TỔNG QUAN VÀ ĐẶC TẢ YÊU CẦU}
+
+\subsection{Đặt vấn đề và Phân tích Ràng buộc Thời gian thực}
+Trong các công trình thông minh hiện đại, thang máy là một hệ thống cơ--điện tử thời gian thực an toàn trọng yếu (\textit{Cyber-Physical \& Safety-Critical Real-Time Embedded System}). Khác với ứng dụng nhúng thông thường, bộ điều khiển thang máy phải liên tục thu thập tín hiệu từ nhiều cảm biến bất đồng bộ, điều phối luồng di chuyển đa tầng và kiểm soát trực tiếp các cơ cấu chấp hành gắn liền với an toàn hành khách. Chỉ một sai lệch nhỏ về trình tự đóng/mở cửa, kích hoạt nhầm hai chiều động cơ hay trễ vài chục mili-giây khi xảy ra kẹt cửa và hỏa hoạn đều dẫn tới hậu quả nghiêm trọng.
+
+Dưới góc độ kỹ thuật hệ thống nhúng, các kiến trúc điều khiển truyền thống bộc lộ ba thách thức cốt lõi:
+\begin{itemize}[nosep]
+    \item \textbf{Nguy cơ trễ hạn của mô hình vòng lặp tuần tự (\textit{Superloop Bottleneck}):} Trong kiến trúc đơn luồng (\texttt{while(1)}), các tác vụ quét phím, hiển thị, đọc cảm biến và xử lý logic phải xếp hàng tuần tự. Khi CPU đang bận giao dịch vào/ra chậm (đọc ADC hoặc ghi trang EEPROM mất $5..10\text{ ms}$), sự kiện khẩn cấp xảy ra đồng thời như vật cản cắt ngang cửa cabin sẽ bị trì hoãn, gây vi phạm thời hạn đáp ứng (\textit{missed deadline}).
+    \item \textbf{Xung đột tài nguyên và đảo ngược độ ưu tiên (\textit{Bus Contention \& Priority Inversion}):} Trên bo mạch điều khiển, nhiều ngoại vi cùng chia sẻ một đường truyền vật lý (4 LED 7 đoạn và phím ma trận dùng chung \texttt{SPI1}; đồng hồ RTC và hộp đen EEPROM dùng chung \texttt{I2C1}). Nếu thiếu khóa đồng bộ có kế thừa độ ưu tiên (\textit{RTOS Mutex with Priority Inheritance}), tác vụ ưu tiên cao có thể bị chặn hoặc làm hỏng khung truyền.
+    \item \textbf{Giới hạn của đi dây song song tập trung (\textit{Point-to-Point Wiring}):} Kéo dây riêng lẻ từ từng nút gọi tầng về tủ điều khiển làm số dây tăng tuyến tính theo số tầng và dễ nhiễu. Giải pháp công nghiệp là mạng vi sai \textbf{CAN Bus}, thu gọn trục giao tiếp giữa buồng thang (\texttt{CABIN}) và sảnh tầng (\texttt{HALL}) xuống chỉ còn 2 dây xoắn đôi (\texttt{CANH/CANL}) có phân xử ưu tiên phần cứng và tự phát hiện lỗi đường truyền.
+\end{itemize}
+
+Để thiết lập kiến trúc lập lịch đa luồng tiền chiếm hợp lý, các tác vụ trong hệ thống thang máy được phân loại theo ba cấp độ ràng buộc thời gian thực (\textit{Real-Time Deadlines}):
+\begin{itemize}[nosep]
+    \item \textbf{Thời hạn cứng (\textit{Hard Real-Time}, $< 1\text{ ms}$):} Phản xạ ngắt chống kẹt cửa \texttt{X0 (PA6)}, ngắt dừng khẩn \texttt{X1 (PA7)} và khóa liên động cắt rơ-le động cơ \texttt{Y0/Y1 (PE5/PE6)} nhằm ngăn chặn va chạm cơ khí hoặc chập mạch công suất.
+    \item \textbf{Thời hạn chặt (\textit{Firm Real-Time}, $10\text{ ms} .. 2500\text{ ms}$):} Chu kỳ quét LED 7 đoạn và phím ma trận \texttt{SPI1} (\texttt{10~ms}), nhịp bước HSM (\texttt{100~ms}), chu kỳ đọc 5 kênh \texttt{ADC1} kèm lọc Hysteresis (\texttt{100~ms}), nhịp phát Heartbeat CAN (\texttt{250~ms}), ngưỡng bắt đứt cáp CAN (\texttt{2000~ms}) và chu kỳ nạp \texttt{IWDG} (\texttt{2500~ms}).
+    \item \textbf{Thời hạn mềm (\textit{Soft Real-Time}, $\ge 200\text{ ms}$):} Tác vụ đóng gói và xuất luồng dữ liệu giám sát JSON \texttt{\$TWIN} (\texttt{200~ms}) lên máy tính cùng tác vụ xử lý lệnh tương tác \textbf{Zephyr Shell CLI} qua cổng \texttt{USART1}.
+\end{itemize}
+
+\clearpage
+\subsection{Mục tiêu Kỹ thuật và Quy trình Phát triển V-Model}
+Xuất phát từ các phân tích trên, đề tài hướng tới việc thiết kế và hiện thực một hệ thống điều khiển thang máy thông minh 7 tầng hoàn chỉnh trên hệ điều hành thời gian thực \textbf{Zephyr RTOS v4.4.0} và bo mạch \textbf{BKIT ARM4 (\texttt{STM32F407ZGT6})}. Toàn bộ dự án được triển khai xuyên suốt theo quy trình chữ V (\textit{V-Model}) chuẩn công nghiệp (Hình~\ref{fig:vmodel}), hướng tới 5 mục tiêu kỹ thuật cốt lõi:
+\begin{itemize}[nosep]
+    \item \textbf{Đa luồng RTOS tĩnh hướng sự kiện:} Tổ chức phần mềm gồm 7 luồng thời gian thực cấp phát tĩnh (mức ưu tiên tiền chiếm \texttt{2..8}), đồng bộ hóa hoàn toàn theo sự kiện qua cơ chế cờ hiệu (\textit{semaphore}) và hàng đợi thông điệp (\textit{message queue}), đồng thời chống đảo ngược ưu tiên trên bus \texttt{SPI1}, \texttt{I2C1} bằng khóa tương hỗ kế thừa độ ưu tiên (\textit{Priority-Inheritance Mutex}).
+    \item \textbf{Máy trạng thái phân cấp (HSM) và Khóa liên động kép:} Quản lý chặt chẽ 9 trạng thái vận hành kết hợp khóa bảo vệ 2 lớp độc lập (\texttt{Core} + \texttt{BSP}), đảm bảo hai rơ-le động cơ \texttt{Y0 (PE5)} và \texttt{Y1 (PE6)} không bao giờ bật cùng lúc hoặc kích hoạt khi cửa chưa đóng kín \texttt{0\%}.
+    \item \textbf{Lập lịch hai chiều \texttt{SCAN/LOOK} tối ưu:} Gom cuốc gọi từ trong cabin và ngoài sảnh hành lang 7 tầng bằng phép toán mặt nạ bit độ phức tạp $O(1)$, giảm quãng đường di chuyển rỗng và chống bỏ đói yêu cầu.
+    \item \textbf{Đáp ứng ngắt tức thời và Lọc cảm biến Hysteresis:} Xử lý ngắt cứng \texttt{X0/X1} với độ trễ micro-giây (đo trực tiếp qua bộ đếm chu kỳ phần cứng \texttt{DWT}); áp dụng vùng trễ 2 ngưỡng cho cảm biến nhiệt \texttt{LM35} ($55.0^\circ\text{C}/48.0^\circ\text{C}$) và biến trở tải trọng \texttt{VR1} ($800\text{ kg}/750\text{ kg}$).
+    \item \textbf{Truyền thông \texttt{CAN 500 kbps} chịu lỗi và Hộp đen phi khả biến:} Cấu hình 3 bộ lọc phần cứng trên bộ thu phát \texttt{TJA1050 (PB8/PB9)}, bắt lỗi đứt cáp trong \texttt{2000~ms}, tự phục hồi \texttt{BUS-OFF}, giám sát treo luồng bằng \texttt{IWDG 2500~ms} và lưu vòng 32 bản ghi sự cố kèm thời gian thực \textbf{DS3231} + mã \texttt{CRC16/32} trên \textbf{AT24C512 EEPROM}.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\input{figures/fig_vmodel}
+\caption{Quy trình phát triển và kiểm chứng hệ thống thang máy nhúng theo mô hình Chữ V (V-Model)}
+\label{fig:vmodel}
+\end{figure}
+
+\subsection{Chức năng Chính của Hệ thống}
+Dưới góc độ vận hành và tương tác người dùng cho tòa nhà 7 tầng, hệ thống điều khiển thang máy cung cấp 5 nhóm chức năng cốt lõi sau:
+\begin{itemize}[nosep]
+    \item \textbf{Điều phối gọi tầng Cabin và Sảnh tầng:} Tiếp nhận yêu cầu chọn tầng trực tiếp từ bàn phím bên trong cabin (Tầng 1..7) và lệnh gọi đi Lên/Xuống từ trạm sảnh thông qua mạng truyền thông vi sai \textbf{CAN}; tự động gom cuốc và tối ưu trình tự phục vụ hai chiều Lên/Xuống nhằm rút ngắn thời gian chờ và quãng đường chạy rỗng.
+    \item \textbf{Quản lý chu trình cửa và Chống kẹt cửa tức thời:} Thực hiện chu trình đóng/mở cửa tuyến tính (\texttt{700~ms}) và giữ mở đón khách (\texttt{1800~ms}); hỗ trợ nút mở cửa nhanh, nút đóng cửa nhanh và phản xạ đảo chiều mở cửa ngay lập tức khi cảm biến quang phát hiện vật cản cắt ngang cửa cabin.
+    \item \textbf{Giám sát an toàn và Xử lý tình huống khẩn cấp:} Chặn đóng cửa khi quá tải trọng ($\ge 800\text{ kg}$, giải tỏa ở $\le 750\text{ kg}$); cắt khẩn toàn bộ truyền động động cơ khi kích hoạt dừng khẩn (\textit{E-Stop}); tự động hủy cuốc gọi, đưa cabin về Tầng 1 và mở cửa thoát hiểm khi phát hiện hỏa hoạn ($\ge 55.0^\circ\text{C}$) hoặc chuyển sang trạng thái an toàn khi đứt kết nối mạng giữa cabin và sảnh.
+    \item \textbf{Hiển thị trực quan và Cảnh báo âm thanh tại chỗ:} Hiển thị số tầng hiện tại, chiều di chuyển (\texttt{UP/dn}) cùng mã trạng thái sự cố (\texttt{FE}, \texttt{Err}) trên cụm 4 LED 7 đoạn; báo trạng thái hệ thống bằng đèn nhịp (\texttt{800~ms} bình thường, \texttt{200~ms} khi lỗi) và phát 5 âm báo còi đa tần số (\texttt{1.5..3.0~kHz}) phân biệt từng ngữ cảnh.
+    \item \textbf{Lưu trữ hộp đen phi khả biến và Giám sát từ xa:} Tự động ghi vòng 32 bản ghi sự cố kèm dấu thời gian thực và mã kiểm tra toàn vẹn vào EEPROM; tự khởi động phục hồi an toàn qua Watchdog phần cứng khi treo tác vụ; đồng thời hỗ trợ giao diện chẩn đoán qua cổng nối tiếp và đồng bộ trạng thái thời gian thực lên phần mềm giám sát trên máy tính.
+\end{itemize}
+
+\subsection{Phạm vi Đề tài}
+Để đảm bảo tính hoàn chỉnh từ tầng cấu hình phần cứng thấp nhất đến giao diện giám sát cấp cao, phạm vi thực hiện của đề tài (\textit{Project Scope}) bao phủ 4 hạng mục trọng tâm:
+\begin{itemize}[nosep]
+    \item \textbf{Phạm vi phần cứng nhúng (\textit{Hardware Scope}):} Triển khai 100\% trên bo mạch thí nghiệm \textbf{BKIT ARM4} (\textbf{STM32F407ZGT6}, lõi ARM Cortex-M4F 168~MHz, 1~MB Flash, 192~KB SRAM, vỏ \texttt{LQFP144}), khai thác đồng bộ 13 cụm ngoại vi vật lý có sẵn trên bo mạch thông qua tệp cấu hình Devicetree \texttt{app.overlay} mà không cần ghép nối thêm linh kiện rời bên ngoài.
+    \item \textbf{Phạm vi điều khiển thời gian thực \& HMI (\textit{RTOS \& HMI Scope}):} Vận hành 7 luồng RTOS cho tòa nhà \textbf{7 tầng}; điều phối gọi tầng hai chiều \texttt{SCAN/LOOK}; hiển thị trực quan hướng di chuyển \texttt{UP/dn} kèm hiệu ứng vạch ngang cuộn 3 nấc trên cụm 4 LED 7 đoạn, ánh xạ trọn vẹn 16 phím ma trận 4$\times$4 và phát âm báo đa tần số qua còi xung PWM \texttt{PF8}.
+    \item \textbf{Phạm vi bảo vệ an toàn \& Hộp đen (\textit{Safety \& Blackbox Scope}):} Hiện thực HSM 9 trạng thái, khóa liên động động cơ 2 lớp, phản xạ ngắt cứng chống kẹt cửa \texttt{X0}, dừng khẩn cấp \texttt{X1}, sơ tán hỏa hoạn tự động \texttt{LM35}, cảnh báo quá tải \texttt{VR1}, giám sát mất kết nối CAN \texttt{2000~ms}, \texttt{IWDG 2500~ms} và lưu trữ 32 bản ghi sự cố phi khả biến vào \texttt{AT24C512 EEPROM}.
+    \item \textbf{Phạm vi kiểm thử kép (\textit{Real Hardware + PC Digital Twin / HIL Scope}):} Xây dựng cơ chế hội tụ sự kiện thống nhất, cho phép kiểm chứng hệ thống đồng thời bằng các tác động vật lý trực tiếp trên bo mạch (hơ nóng LM35, vặn biến trở VR1, kích chân X0/X1, bấm phím ma trận) và bằng các kịch bản tiêm lỗi tự động từ phần mềm \textbf{PC Digital Twin} cùng giao diện \textbf{Zephyr Shell CLI}.
+\end{itemize}
+
+\subsection{Giới hạn của Đề tài}
+Do đặc thù triển khai và thử nghiệm trên bộ kit vi điều khiển tại phòng thí nghiệm, đề tài xác định rõ 4 giới hạn và giả định kỹ thuật (\textit{System Limitations \& Assumptions}) sau:
+\begin{itemize}[nosep]
+    \item \textbf{Mô hình hóa động học cơ khí bằng định thời chuẩn xác:} Vì bo mạch BKIT ARM4 không kết nối với biến tần công suất hay giếng thang cơ khí thật, hai ngõ ra cách ly quang \texttt{Y0 (PE5)} và \texttt{Y1 (PE6)} đóng vai trò tín hiệu kích contactor chiều Lên/Xuống; thời gian cabin di chuyển giữa hai tầng liền kề được chuẩn hóa ở mức \texttt{1500~ms/tầng}, thời gian đóng/mở cửa tuyến tính là \texttt{700~ms} và thời gian giữ mở cửa là \texttt{1800~ms}.
+    \item \textbf{Giả lập tải trọng buồng thang qua biến trở tương tự:} Trọng lượng hành khách trong cabin ($0..1000\text{ kg}$) được quy đổi tuyến tính từ điện áp tương tự thực tế ($0..3300\text{ mV}$) đo trên biến trở \texttt{VR1 (PC1 -- ADC1\_IN11)} của bo mạch BKIT ARM4 thay cho đầu đo lực (\textit{loadcell}) cầu Wheatstone công nghiệp.
+    \item \textbf{Quy mô mạng điều khiển đơn giếng thang (\textit{Single-Shaft Topology}):} Hệ thống tập trung giải quyết truyền thông phân tán giữa nút buồng thang (\texttt{CABIN}) và nút sảnh tầng (\texttt{HALL}) cho một giếng thang 7 tầng (hỗ trợ chạy độc lập 1 kit ở chế độ \texttt{CAN LOOPBACK} hoặc nối dây 2 kit ở chế độ \texttt{CAN NORMAL}), chưa mở rộng sang bài toán điều phối nhóm nhiều buồng thang song song (\textit{Multi-Car Group Control}).
+    \item \textbf{Phạm vi bảo mật đường truyền nội bộ:} Giao thức \texttt{CAN Bus 500 kbps} trong đề tài tập trung tối ưu tính xác định thời gian thực, phân xử ưu tiên phần cứng và khả năng chịu lỗi tầng vật lý (\texttt{CRC} khung CAN 15-bit, bắt đứt cáp \texttt{2000~ms}, tự phục hồi \texttt{BUS-OFF}), chưa áp dụng cơ chế mã hóa hay chữ ký xác thực mật mã học cho khung tin.
+\end{itemize}
+
+\clearpage
+\subsection{Ma trận Truy xuất Yêu cầu (Requirements Traceability Matrix)}
+Tuân thủ quy trình phát triển V-Model, toàn bộ 12 yêu cầu kỹ thuật cốt lõi (\texttt{REQ-001..REQ-012}) được định danh tường minh và ánh xạ một--một tới phân hệ kiến trúc xử lý cũng như kịch bản kiểm thử ở Bảng~\ref{tab:rtm}.
+
+\begingroup
+\renewcommand{\arraystretch}{1.22}%
+\setlength{\tabcolsep}{4.5pt}%
+\fontsize{8.3}{10.6}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|C{1.45cm}|Y|L{3.25cm}|L{2.85cm}|C{1.35cm}|}
+\caption{Ma trận truy xuất yêu cầu hệ thống theo quy trình V-Model (RTM)}\label{tab:rtm}\\
+\hline
+\rowcolor{tablehead}
+\thcell{Mã REQ} & \thcell{Mô tả yêu cầu kỹ thuật} & \thcell{Chỉ tiêu / Ngưỡng an toàn} & \thcell{Phân hệ xử lý} & \thcell{Test Case} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{Mã REQ} & \thcell{Mô tả yêu cầu kỹ thuật} & \thcell{Chỉ tiêu / Ngưỡng an toàn} & \thcell{Phân hệ xử lý} & \thcell{Test Case} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\texttt{REQ-001} & Khởi tạo toàn bộ ngoại vi BKIT ARM4 đúng sơ đồ chân, không xung đột bus. & 0 lỗi cấu hình DT; tách \texttt{PA6}, \texttt{PB9}, bật \texttt{PF8/PG6}. & Khối Cấu hình DT \& Khởi tạo BSP & \texttt{TC-001} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-002} & Khóa liên động kép: Cấm \texttt{Y0} và \texttt{Y1} bật cùng lúc hoặc chạy khi cửa mở. & 0 vi phạm trong mọi chuyển tiếp HSM. & Khối Logic HSM \& Khóa Rơ-le & \texttt{TC-002} \\
+\hline
+\texttt{REQ-003} & Cảm biến kẹt cửa \texttt{X0 (PA6)} kích ngắt EXTI, đảo chiều mở cửa tức thời. & Độ trễ ISR $\rightarrow$ Thread $< 1000~\mu\text{s}$ (đo bằng \texttt{DWT}). & Khối Ngắt EXTI \& Tác vụ An toàn & \texttt{TC-003} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-004} & Thuật toán lập lịch \texttt{SCAN/LOOK} gom cuốc 7 tầng hai chiều Lên/Xuống. & Độ phức tạp $O(1)$, không bỏ sót yêu cầu. & Bộ Lập lịch Gọi tầng \texttt{SCAN/LOOK} & \texttt{TC-004} \\
+\hline
+\texttt{REQ-005} & Báo cháy tự động qua cảm biến nhiệt \texttt{LM35 (PC2)} hoặc khung CAN \texttt{0x080}. & Bật ở $\ge 55.0^\circ\text{C}$, xóa ở $\le 48.0^\circ\text{C}$; hạ cánh Tầng 1. & Khối Cảm biến Nhiệt \& HSM Báo cháy & \texttt{TC-005} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-006} & Giám sát quá tải cabin qua biến trở \texttt{VR1 (PC1)} kèm trễ Hysteresis. & Bật ở $\ge 800\text{ kg}$, giải tỏa ở $\le 750\text{ kg}$; giữ cửa mở. & Khối Cân tải ADC1 \& Còi PWM & \texttt{TC-006} \\
+\hline
+\texttt{REQ-007} & Chống đảo ngược ưu tiên trên bus dùng chung \texttt{SPI1} và \texttt{I2C1}. & Bảo vệ bằng Mutex ưu tiên; hiển thị \texttt{UP/dn} \& 16 phím. & Khối Giao diện SPI1 \& Lưu trữ I2C1 & \texttt{TC-007} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-008} & Truyền thông CAN 500 kbps kèm bộ lọc phần cứng theo nhóm ID ưu tiên. & 3 filter HW (\texttt{0x080}, \texttt{0x10x}, \texttt{0x200..0x3FF}), hỗ trợ \texttt{RTR}. & Khối Truyền thông \texttt{bxCAN1} & \texttt{TC-008} \\
+\hline
+\texttt{REQ-009} & Phát hiện đứt cáp CAN / mất nút đối tác và chuyển về trạng thái an toàn lỗi. & Timeout $\le 2000\text{ ms}$; cắt động cơ, mở cửa an toàn. & Khối Giám sát Kết nối CAN & \texttt{TC-009} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-010} & Tự động phục hồi trạng thái ngắt bus CAN và lưu nhật ký sự cố. & Tự phục hồi phần cứng bus \& theo dõi \texttt{TEC/REC}. & Khối Phục hồi Bus CAN \& Hộp đen & \texttt{TC-010} \\
+\hline
+\texttt{REQ-011} & Watchdog \texttt{IWDG} tự reset khi treo luồng + lưu hộp đen \texttt{AT24C512}. & Timeout \texttt{2500~ms}; vòng 32 bản ghi (\texttt{CRC16} + RTC). & Khối Watchdog Phần cứng \& EEPROM & \texttt{TC-011} \\
+\hline
+\rowcolor{roweven}
+\texttt{REQ-012} & Giao tiếp Shell CLI \& PC Digital Twin thời gian thực qua \texttt{USART1}. & Baud \texttt{115200}; xuất gói JSON \texttt{\$TWIN} mỗi \texttt{200~ms}. & Khối Shell CLI, Telemetry \& PC Twin & \texttt{TC-012} \\
+\end{xltabular}
+\endgroup
+
+\clearpage
+\subsection{Tổng quan Bố cục Báo cáo}
+Nội dung báo cáo được tổ chức chặt chẽ thành 5 chương, phản ánh trọn vẹn quy trình từ phân tích yêu cầu, thiết kế phần cứng, hiện thực phần mềm thời gian thực đến kiểm chứng thực nghiệm:
+\begin{itemize}[nosep]
+    \item \textbf{Chương 1 -- Tổng quan và Đặc tả Yêu cầu:} Giới thiệu bối cảnh bài toán điều khiển thang máy an toàn trọng yếu, phân tích các ràng buộc thời gian thực (\textit{Hard / Firm / Soft Deadlines}), xác định mục tiêu, các nhóm chức năng chính, phạm vi, giới hạn kỹ thuật và lập Ma trận truy xuất yêu cầu (\texttt{REQ-001..REQ-012}).
+    \item \textbf{Chương 2 -- Kiến trúc Phần cứng và Ánh xạ chân BKIT ARM4:} Phân tích sơ đồ khối kiến trúc tổng thể, nguyên lý mạch của 13 cụm ngoại vi trên bo mạch \textbf{BKIT ARM4}, giải quyết triệt để 3 xung đột chân trong \texttt{app.overlay}, cấu hình 4 công tắc DIP Switch và bảng ánh xạ chân \texttt{STM32F407ZGT6}.
+    \item \textbf{Chương 3 -- Thiết kế và Hiện thực Firmware:} Trình bày chi tiết kiến trúc 13 mô-đun mã nguồn C, 7 luồng RTOS tĩnh hướng sự kiện, cơ chế kế thừa độ ưu tiên \textit{Mutex}, đồ thị Máy trạng thái phân cấp 9 trạng thái (HSM), khóa liên động động cơ 2 lớp, cơ chế hội tụ sự kiện phần cứng thật \& HIL, thuật toán lập lịch \texttt{SCAN/LOOK} $O(1)$, lọc trễ Hysteresis \texttt{ADC1}, giao diện \texttt{SPI1} (\texttt{UP/dn} \& 16 phím), mạng \texttt{CAN 500 kbps} và hộp đen \texttt{AT24C512 EEPROM}.
+    \item \textbf{Chương 4 -- Thực nghiệm và Đánh giá Kết quả:} Trình bày môi trường kiểm thử kép gồm giao diện dòng lệnh \textbf{Zephyr Shell CLI} và phần mềm \textbf{PC Digital Twin}; đánh giá kết quả 12 kịch bản kiểm thử \texttt{TC-001..TC-012}, phân tích độ trễ ngắt micro-giây (đo bằng bộ đếm \texttt{DWT}), quỹ đạo lập lịch, biên độ dự trữ an toàn Stack và quy trình 4 bước demo thực tế trên bo mạch.
+    \item \textbf{Chương 5 -- Kết luận và Hướng Phát triển:} Tổng kết các đóng góp kỹ thuật đạt được, đánh giá mức chiếm dụng tài nguyên bộ nhớ (\texttt{9.93\%} Flash, \texttt{21.83\%} SRAM) và đề xuất 3 hướng mở rộng nâng cao.
+\end{itemize}

@@ -1,0 +1,118 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % Tieu de 4 cot (khoang ho giua cac cot >= 1.25cm -> tuyet doi khong chong day/mui ten)
+    \node[acadhdr, text width=3.80cm, minimum height=0.72cm] at (2.05, 8.30) {1. NGỮ CẢNH NGẮT\\{\tiny (Non-Blocking ISR)}};
+    \node[acadhdr, text width=3.20cm, minimum height=0.72cm] at (7.05, 8.30) {2. ĐỒNG BỘ KERNEL\\{\tiny (\texttt{k\_sem} / \texttt{k\_msgq})}};
+    \node[acadhdr, text width=5.00cm, minimum height=0.72cm, fill=tablehead, text=white] at (12.85, 8.30) {3. 7 LUỒNG RTOS TĨNH\\{\tiny (\texttt{K\_THREAD\_DEFINE})}};
+    \node[acadhdr, text width=3.75cm, minimum height=0.72cm] at (18.85, 8.30) {4. KHÓA \texttt{MUTEX} \& I/O\\{\tiny (\textit{Priority Inheritance})}};
+
+    % Cot 1: Nguon danh thuc ISR (x=2.05, east ~ 4.13)
+    \node[acadbox, text width=3.80cm, minimum height=1.35cm] (I1) at (2.05, 6.95)
+        {\textbf{Ngắt cứng \texttt{EXTI6 / EXTI7}}\\[1pt]
+         {\tiny \texttt{X0(PA6)}, \texttt{X1(PA7)} (lọc rung 40ms)}\\
+         {\tiny Chụp \texttt{k\_cycle\_get\_32()} (\texttt{DWT})}};
+
+    \node[acadbox, text width=3.80cm, minimum height=1.40cm] (I2) at (2.05, 4.70)
+        {\textbf{5 Bộ định thời \texttt{k\_timer}}\\[1pt]
+         {\tiny \texttt{safety}(100ms) $\cdot$ \texttt{hsm}(100ms)}\\
+         {\tiny \texttt{can\_hb}(250ms) $\cdot$ \texttt{hmi}(10ms) $\cdot$ \texttt{wdt}}};
+
+    \node[acadbox, text width=3.80cm, minimum height=1.35cm] (I3) at (2.05, 2.55)
+        {\textbf{Ngắt bộ điều khiển \texttt{bxCAN1}}\\[1pt]
+         {\tiny 3 HW Filter (\texttt{0x080, 0x10x, 0x200+})}\\
+         {\tiny \texttt{can\_tx\_done\_cb} $\rightarrow$ \texttt{atomic\_t}}};
+
+    \node[acadbox, text width=3.80cm, minimum height=1.35cm] (I4) at (2.05, 0.50)
+        {\textbf{Zephyr Shell CLI / HIL}\\[1pt]
+         {\tiny \texttt{USART1 (115200)}: \texttt{elev call/fault}}\\
+         {\tiny Phím ma trận 4$\times$4 (\texttt{0..15})}};
+
+    % Cot 2: Kernel Sync Primitives (x=7.05, west ~ 5.27, east ~ 8.83)
+    \node[acadbox, text width=3.20cm, minimum height=1.10cm] (K1) at (7.05, 6.95)
+        {\texttt{g\_safety\_wakeup\_sem}\\[1pt]{\tiny \texttt{k\_sem} (Đánh thức T1)}};
+
+    \node[acadboxnav, text width=3.20cm, minimum height=1.35cm] (K2) at (7.05, 4.70)
+        {\texttt{g\_hsm\_event\_msgq}\\[1pt]
+         {\tiny \texttt{k\_msgq} (32 gói sự kiện)}\\
+         {\tiny Hội tụ Phần cứng thật \& HIL}};
+
+    \node[acadbox, text width=3.20cm, minimum height=1.35cm] (K3) at (7.05, 2.55)
+        {\texttt{g\_can\_rx\_msgq} \&\\[-1pt]
+         \texttt{g\_can\_partner\_sem}\\[1pt]
+         {\tiny Timeout \texttt{2000 ms} (-EAGAIN)}};
+
+    \node[acadbox, text width=3.20cm, minimum height=1.20cm] (K4) at (7.05, 0.50)
+        {\texttt{g\_hmi\_sem} (10ms) \&\\[-1pt]
+         \texttt{g\_wdt\_sem} (100ms)};
+
+    % Cot 3: 7 Luong RTOS (x=12.85, west ~ 10.17, east ~ 15.53)
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T1) at (12.85, 6.95)
+        {\textbf{\texttt{t1\_safety}} {\tiny [Prio 2 -- 1536 B]}\\[-1pt]
+         {\tiny Đọc \texttt{ADC1} (5 ch) + Hysteresis \texttt{LM35/VR1}}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T2) at (12.85, 5.77)
+        {\textbf{\texttt{t2\_fsm}} {\tiny [Prio 3 -- 2048 B]}\\[-1pt]
+         {\tiny HSM 9 trạng thái + \texttt{SCAN/LOOK} + Khóa L1}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T3a) at (12.85, 4.59)
+        {\textbf{\texttt{t3\_can\_rx}} {\tiny [Prio 4 -- 1536 B]}\\[-1pt]
+         {\tiny Giải mã CAN, trả lời \texttt{RTR}, cấp \texttt{partner\_sem}}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T3b) at (12.85, 3.41)
+        {\textbf{\texttt{t3\_can\_tx}} {\tiny [Prio 4 -- 1536 B]}\\[-1pt]
+         {\tiny Phát HB/Status 250ms, phục hồi \texttt{BUS-OFF}}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T3c) at (12.85, 2.23)
+        {\textbf{\texttt{t3\_can\_wdt}} {\tiny [Prio 4 -- 1024 B]}\\[-1pt]
+         {\tiny Giám sát \texttt{partner\_sem} 2000ms $\rightarrow$ \texttt{FAIL\_SAFE}}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T4) at (12.85, 1.05)
+        {\textbf{\texttt{t4\_hmi}} {\tiny [Prio 5 -- 1536 B]}\\[-1pt]
+         {\tiny Quét 7Seg (\texttt{PG6}), 16 phím (\texttt{PD3}), Còi \texttt{PF8}}};
+    \node[acadbox, text width=5.00cm, minimum height=0.86cm] (T5) at (12.85, -0.13)
+        {\textbf{\texttt{t5\_wdt}} {\tiny [Prio 8 -- 1536 B]}\\[-1pt]
+         {\tiny Kiểm tra check-in \texttt{IWDG} \& Xuất JSON \texttt{\$TWIN}}};
+
+    % Cot 4: 4 Khoi Tai nguyen xep DUNG THU TU TUONG UNG T1..T5 -> KHONG BAO GIO CAT CHEO!
+    % (x=18.85, west ~ 16.79)
+    \node[acadboxnav, text width=3.75cm, minimum height=1.38cm] (R1) at (18.85, 6.45)
+        {\textbf{Khóa Liên động Lớp 2}\\[1pt]
+         {\tiny \texttt{bsp\_gpio\_set\_motor\_outputs()}}\\
+         {\tiny Cấm \texttt{PE5} \& \texttt{PE6} bật đồng thời}};
+
+    \node[acadboxnav, text width=3.75cm, minimum height=1.38cm] (R2) at (18.85, 4.15)
+        {\textbf{\texttt{g\_i2c1\_bus\_mutex}}\\[1pt]
+         {\tiny (\textit{Priority Inheritance})}\\
+         {\tiny \texttt{DS3231} (\texttt{0x68}) + \texttt{AT24C512} (\texttt{0x50})}};
+
+    \node[acadboxnav, text width=3.75cm, minimum height=1.42cm] (R3) at (18.85, 1.75)
+        {\textbf{\texttt{g\_spi1\_bus\_mutex}}\\[1pt]
+         {\tiny (\textit{Priority Inheritance})}\\
+         {\tiny 2$\times$\texttt{74HC595} (\texttt{PG6}) \& 2$\times$\texttt{74HC165} (\texttt{PD3})}};
+
+    \node[acadboxnav, text width=3.75cm, minimum height=1.18cm] (R4) at (18.85, -0.25)
+        {\textbf{Hardware \texttt{IWDG} (2500 ms)}\\[1pt]
+         {\tiny Chỉ nạp \texttt{wdt\_feed()} khi đủ 4 check-in}};
+
+    % === KENH 1 -> 2 (x = 4.13 .. 5.27 -> cac track 4.52 va 4.88 cach deu, thoang) ===
+    \draw[acadarr] (I1.east) -- (K1.west);
+    \draw[acadarr] (I2.east) -- (K2.west);
+    \draw[acadarr] ($(I2.east)+(0,-0.32)$) -- (4.88, 4.38) |- (K4.west |- 0, 0.72);
+    \draw[acadarr] (I3.east) -- (K3.west);
+    \draw[acadarr] (I4.east) -- (4.52, 0.50) |- (K2.west |- 0, 4.30);
+
+    % === KENH 2 -> 3 (x = 8.83 .. 10.17 -> tach rieng tung duong theo y, khong dinh chum) ===
+    \draw[acadarr] (K1.east) -- (T1.west);
+    \draw[acadarr] (K2.east) -- (9.35, 4.70) |- (T2.west);
+    \draw[acadarr] ($(K3.east)+(0, 0.25)$) -- (9.65, 2.80) |- (T3a.west);
+    \draw[acadarr] ($(K3.east)+(0,-0.25)$) -- (9.65, 2.30) |- (T3c.west);
+    \draw[acadarr] ($(K4.east)+(0, 0.22)$) -- (9.35, 0.72) |- (T4.west);
+    \draw[acadarr] ($(K4.east)+(0,-0.22)$) -- (9.35, 0.28) |- (T5.west);
+
+    % Duong Post Event tu T1 quay lai K2 (chay o y=6.24 -> sach phia tren T2=5.77 & duoi K1=6.40)
+    \draw[acaddash] ($(T1.west)+(0,-0.22)$) -- (9.85, 6.73) |- (7.05, 6.24) -- (K2.north);
+
+    % === KENH 3 -> 4 (x = 15.53 .. 16.79 -> 100% PHANG, 0 DUONG CAT NHAU!) ===
+    \draw[acadarr] (T1.east) -- (16.15, 6.95) |- ($(R1.west)+(0, 0.28)$);
+    \draw[acadarr] ($(T2.east)+(0, 0.16)$) -- (15.90, 5.93) |- ($(R1.west)+(0,-0.25)$);
+    \draw[acadarr] ($(T2.east)+(0,-0.20)$) -- (16.35, 5.57) |- ($(R2.west)+(0, 0.25)$);
+    \draw[acadarr] (T3b.east) -- (16.10, 3.41) |- ($(R2.west)+(0,-0.25)$);
+    \draw[acadarr] (T4.east) -- (16.15, 1.05) |- (R3.west);
+    \draw[acadarr] (T5.east) -- (16.15, -0.13) |- (R4.west);
+\end{tikzpicture}%
+}

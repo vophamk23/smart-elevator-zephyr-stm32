@@ -1,0 +1,118 @@
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{BẢNG PHÂN CÔNG NHIỆM VỤ VÀ BIÊN BẢN HỌP NHÓM}
+\markboth{BẢNG PHÂN CÔNG NHIỆM VỤ}{BẢNG PHÂN CÔNG NHIỆM VỤ}
+
+\begin{center}
+    {\fontsize{14}{17}\selectfont\bfseries BẢNG PHÂN CÔNG NHIỆM VỤ VÀ BIÊN BẢN HỌP NHÓM (NHÓM 6 -- L01)\par}
+    \vspace{0.12cm}
+    {\fontsize{11}{14}\selectfont\itshape (Đính kèm Báo cáo Bài tập lớn -- \TenMonHoc)\par}
+\end{center}
+
+\vspace{0.15cm}
+\noindent\textbf{1. Bảng phân công nhiệm vụ và mức độ hoàn thành của từng thành viên}
+
+\begingroup
+\renewcommand{\arraystretch}{1.26}%
+\setlength{\tabcolsep}{5pt}%
+\fontsize{8.8}{11.2}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|C{0.7cm}|L{3.1cm}|C{1.5cm}|Y|C{1.6cm}|}
+\hline
+\rowcolor{tablehead}
+\thcell{STT} & \thcell{Họ và tên} & \thcell{MSSV} & \thcell{Nhiệm vụ kỹ thuật được phân công} & \thcell{Tiến độ} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{STT} & \thcell{Họ và tên} & \thcell{MSSV} & \thcell{Nhiệm vụ kỹ thuật được phân công} & \thcell{Tiến độ} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+1 & \textbf{Nguyễn Anh Thư} \newline \textit{(Nhóm trưởng)} & 2313385 &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Quản lý quy trình phát triển V-Model và xây dựng Ma trận truy xuất yêu cầu (\texttt{REQ-001..REQ-012}).
+    \item Thiết kế \& hiện thực Máy trạng thái phân cấp 9 trạng thái (HSM), khóa liên động phần mềm, ma trận độ phủ chuyển tiếp $9\times 9$ và thuật toán lập lịch SCAN/LOOK 7 tầng (\texttt{core/elevator\_hsm.c}, \texttt{core/elevator\_scheduler.c}).
+    \item Biên soạn Chương 1 (Tổng quan) và Chương 5 (Kết luận).
+\end{itemize} & \textbf{100\%} \\
+\hline
+\rowcolor{roweven}
+2 & \textbf{Phan Ngọc Phương Trinh} & 2313582 &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Thiết kế Devicetree (\texttt{app.overlay}) giải quyết 3 xung đột chân giữa target \texttt{LQFP100} và bo mạch \texttt{BKIT ARM4 LQFP144}.
+    \item Hiện thực 6 mô-đun driver BSP (\texttt{src/bsp/bsp\_*.c}): ngắt EXTI \texttt{PA6/PA7} đo độ trễ bằng \texttt{DWT->CYCCNT}, ADC1 5 kênh kèm lọc Hysteresis, PWM Buzzer \texttt{PF8}, bus \texttt{SPI1/I2C1} bảo vệ bằng \texttt{k\_mutex}, hộp đen \texttt{AT24C512} và \texttt{IWDG}.
+    \item Biên soạn Chương 2 (Kiến trúc phần cứng \& Devicetree).
+\end{itemize} & \textbf{100\%} \\
+\hline
+3 & \textbf{Lê Trần Bảo Nhi} & 2312499 &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Thiết kế giao thức CAN Bus 500 kbps (\texttt{comms/can\_bus.c}), 3 bộ lọc phần cứng (HW Filter Mask), hỗ trợ chế độ \texttt{LOOPBACK/NORMAL} và vai trò \texttt{CABIN/HALL}, giám sát đứt cáp 2000~ms \& tự phục hồi \texttt{BUS-OFF}.
+    \item Hiện thực 7 luồng RTOS tĩnh hướng sự kiện (\texttt{k\_timer} + \texttt{k\_sem}/\texttt{k\_msgq} trong \texttt{main.c}) và luồng telemetry JSON \texttt{\$TWIN} (\texttt{comms/twin\_telemetry.c}).
+    \item Biên soạn Chương 3 (Thiết kế \& Hiện thực Firmware).
+\end{itemize} & \textbf{100\%} \\
+\hline
+\rowcolor{roweven}
+4 & \textbf{Phạm Công Võ} & 2313946 &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Hiện thực bộ lệnh Zephyr Shell CLI (\texttt{cli/cli\_elev.c}, \texttt{cli/cli\_bkit\_test.c}) phục vụ điều khiển, tiêm lỗi HIL và chẩn đoán độc lập từng ngoại vi qua \texttt{USART1}.
+    \item Phát triển giao diện Bản sao số PC Digital Twin (\texttt{pc\_hil\_twin/elevator\_twin.py}), kịch bản kiểm thử tự động (\textit{HIL Smoke Suite}) và xuất nhật ký \texttt{.csv}.
+    \item Biên soạn Chương 4 (Thực nghiệm \& Đánh giá kết quả).
+\end{itemize} & \textbf{100\%} \\
+\end{xltabular}
+\endgroup
+
+\vspace{0.25cm}
+\noindent\textbf{2. Biên bản họp nhóm định kỳ (Group Meeting Minutes)}
+
+\begingroup
+\renewcommand{\arraystretch}{1.24}%
+\setlength{\tabcolsep}{5pt}%
+\fontsize{8.6}{11.0}\selectfont
+\arrayrulecolor{tableborder}%
+\begin{xltabular}{\textwidth}{|C{0.9cm}|C{2.1cm}|C{1.6cm}|Y|L{3.5cm}|}
+\hline
+\rowcolor{tablehead}
+\thcell{Buổi} & \thcell{Thời gian} & \thcell{Hiện diện} & \thcell{Nội dung thảo luận và Quyết định kỹ thuật} & \thcell{Kết quả đầu ra} \\
+\hline
+\endfirsthead
+\hline
+\rowcolor{tablehead}
+\thcell{Buổi} & \thcell{Thời gian} & \thcell{Hiện diện} & \thcell{Nội dung thảo luận và Quyết định kỹ thuật} & \thcell{Kết quả đầu ra} \\
+\hline
+\endhead
+\hline
+\endfoot
+\hline
+\endlastfoot
+\textbf{1} & Tuần 1 \newline (18/10/2026) & 4/4 \newline (100\%) &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Phân tích sơ đồ nguyên lý kit \textbf{BKIT ARM4} và tài liệu Quick Start Guide.
+    \item Phát hiện và chốt phương án xử lý 3 xung đột chân mặc định trên target \texttt{stm32f4\_disco} (\texttt{PA6}, \texttt{PB9}, \texttt{PF8/PG6}).
+    \item Xây dựng Ma trận yêu cầu \texttt{REQ-001..REQ-012} theo V-Model.
+\end{itemize} & Hoàn tất \texttt{app.overlay}, \texttt{prj.conf} và đặc tả \texttt{include/elevator\_\allowbreak types.h}. \\
+\hline
+\rowcolor{roweven}
+\textbf{2} & Tuần 2 \newline (01/11/2026) & 4/4 \newline (100\%) &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Thiết kế lớp driver BSP tách biệt cho 6 nhóm ngoại vi.
+    \item Thống nhất dùng \texttt{k\_mutex} (\textit{Priority Inheritance}) bảo vệ bus dùng chung \texttt{SPI1} và \texttt{I2C1}.
+    \item Bổ sung bộ lọc trễ 2 ngưỡng (\textit{Hysteresis}) cho \texttt{LM35} ($55^\circ\text{C}/48^\circ\text{C}$) và biến trở tải \texttt{VR1} ($800\text{ kg}/750\text{ kg}$).
+\end{itemize} & Hoàn thành 6 tệp \texttt{src/bsp/bsp\_*.c} và bộ lệnh chẩn đoán ngoại vi \texttt{bkit *}. \\
+\hline
+\textbf{3} & Tuần 3 \newline (10/11/2026) & 4/4 \newline (100\%) &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Rà soát đồ thị HSM 9 trạng thái, khóa liên động 2 lớp cho chân động cơ \texttt{PE5/PE6} và thuật toán lập lịch SCAN/LOOK.
+    \item Thiết kế khung truyền CAN 500~kbps, 3 bộ lọc phần cứng và cơ chế bắt lỗi đứt cáp 2000~ms.
+\end{itemize} & Hoàn thành \texttt{src/core/*.c}, \texttt{src/comms/can\_bus.c} và 7 luồng RTOS trong \texttt{main.c}. \\
+\hline
+\rowcolor{roweven}
+\textbf{4} & Tuần 4 \newline (18/11/2026) & 4/4 \newline (100\%) &
+\begin{itemize}[nosep, leftmargin=1.1em, topsep=1pt, partopsep=0pt]
+    \item Nâng cấp hiển thị LED 7 đoạn (\texttt{UP/dn} kèm hiệu ứng vạch cuộn 3 nấc) và gán đủ 16 phím ma trận 4$\times$4.
+    \item Kiểm thử tích hợp với giao diện Python Digital Twin (\texttt{\$TWIN}), biên dịch sạch firmware và hoàn thiện báo cáo.
+\end{itemize} & Build đạt \texttt{0 lỗi} (\texttt{9.93\%} Flash), pass 100\% bài test mô phỏng HIL và hoàn tất báo cáo. \\
+\end{xltabular}
+\endgroup

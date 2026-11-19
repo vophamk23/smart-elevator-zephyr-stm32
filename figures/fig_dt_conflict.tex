@@ -1,0 +1,62 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}
+    % Tieu de 3 cot (khop rong voi 3 cot ben duoi, khong bao gio de nhau)
+    \node[acadhdr, text width=4.65cm, minimum height=0.68cm] (H1) at (2.5, 4.75)  {TARGET \texttt{stm32f4\_disco} (\texttt{LQFP100})};
+    \node[acadhdr, text width=4.85cm, minimum height=0.68cm, fill=tablehead, text=white] (H2) at (8.05, 4.75)  {CAN THIỆP TRONG \texttt{app.overlay}};
+    \node[acadhdr, text width=4.85cm, minimum height=0.68cm] (H3) at (13.6, 4.75) {ÁNH XẠ \texttt{BKIT ARM4} (\texttt{LQFP144})};
+
+    % Hang 1: Xung dot PA6
+    \node[acadbox, text width=4.65cm, minimum height=1.55cm] (C1L) at (2.5, 3.25)
+        {\textbf{Xung đột 1: Chân \texttt{PA6}}\\[1pt]
+         {\tiny Mặc định \texttt{\&adc1} gán \texttt{adc1\_in6\_pa6}}\\
+         {\tiny $\Rightarrow$ Chiếm dụng chân ngắt cứng \texttt{X0}}};
+
+    \node[acadboxnav, text width=4.85cm, minimum height=1.55cm] (C1M) at (8.05, 3.25)
+        {\texttt{\&adc1} ghi đè \texttt{pinctrl-0}:\\[1pt]
+         {\tiny Chỉ giữ 5 kênh \texttt{PB0, PB1, PC0, PC1, PC2}}\\
+         {\tiny Khai báo \texttt{bkit\_in\_x0: PA6 (ACTIVE\_LOW)}}};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.55cm] (C1R) at (13.6, 3.25)
+        {\textbf{\texttt{PA6} $\rightarrow$ Ngắt cứng \texttt{EXTI6} (\texttt{X0})}\\[1pt]
+         {\tiny Phát hiện vật cản cửa cabin (tức thời)}\\
+         {\tiny Tách bạch hoàn toàn với 5 kênh \texttt{ADC1}}};
+
+    % Hang 2: Xung dot PB9
+    \node[acadbox, text width=4.65cm, minimum height=1.55cm] (C2L) at (2.5, 1.30)
+        {\textbf{Xung đột 2: Chân \texttt{PB9}}\\[1pt]
+         {\tiny Mặc định \texttt{\&i2c1} dùng \texttt{i2c1\_sda\_pb9}}\\
+         {\tiny nối codec \texttt{cs43l22@4a} $\Rightarrow$ Đụng \texttt{CAN1\_TX}}};
+
+    \node[acadboxnav, text width=4.85cm, minimum height=1.55cm] (C2M) at (8.05, 1.30)
+        {\texttt{\&i2c1} chuyển \texttt{PB6/PB7} (\texttt{400 kHz}):\\[1pt]
+         {\tiny Gắn \texttt{status = "disabled"} cho \texttt{\&audio\_codec},}\\
+         {\tiny \texttt{\&can2}, \texttt{\&usart2}, \texttt{\&i2s3}, \texttt{\&timers2/4}}};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.55cm] (C2R) at (13.6, 1.30)
+        {\textbf{\texttt{PB8/PB9} $\rightarrow$ \texttt{CAN1} | \texttt{PB6/7} $\rightarrow$ \texttt{I2C1}}\\[1pt]
+         {\tiny \texttt{bxCAN1} 500 kbps (\texttt{TJA1050}) \& \texttt{DS3231/}}\\
+         {\tiny \texttt{AT24C512} chạy đồng thời không xung đột}};
+
+    % Hang 3: Port F va Port G thieu tren LQFP100
+    \node[acadbox, text width=4.65cm, minimum height=1.55cm] (C3L) at (2.5, -0.65)
+        {\textbf{Xung đột 3: Thiếu Port \texttt{F/G}}\\[1pt]
+         {\tiny Vỏ \texttt{LQFP100} không có cổng \texttt{GPIOF/G}}\\
+         {\tiny $\Rightarrow$ Không có nút còi \texttt{PF8} \& chốt \texttt{PG6}}};
+
+    \node[acadboxnav, text width=4.85cm, minimum height=1.55cm] (C3M) at (8.05, -0.65)
+        {Bật \texttt{\&gpiof}, \texttt{\&gpiog}, \texttt{\&timers13}:\\[1pt]
+         {\tiny Khai báo mới \texttt{tim13\_ch1\_pf8 (AF9)}}\\
+         {\tiny Gán \texttt{ld-latch-gpios = <\&gpiog 6>}}};
+
+    \node[acadbox, text width=4.85cm, minimum height=1.55cm] (C3R) at (13.6, -0.65)
+        {\textbf{\texttt{PF8} $\rightarrow$ \texttt{PWM13} | \texttt{PG6} $\rightarrow$ \texttt{LD\_LATCH}}\\[1pt]
+         {\tiny Còi xung PWM đa âm báo (\texttt{TIM13\_CH1})}\\
+         {\tiny Chốt dữ liệu 4 LED 7 đoạn qua \texttt{74HC595}}};
+
+    % Mui ten ket noi giua 3 cot
+    \foreach \r in {1, 2, 3} {
+        \draw[acadarr] (C\r L.east) -- (C\r M.west);
+        \draw[acadarr] (C\r M.east) -- (C\r R.west);
+    }
+\end{tikzpicture}%
+}

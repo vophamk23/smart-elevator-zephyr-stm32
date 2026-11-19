@@ -1,0 +1,77 @@
+\begin{titlepage}
+\newgeometry{left=25mm, right=25mm, top=20mm, bottom=20mm}
+\singlespacing
+\setlength{\parskip}{0pt}
+
+%% --- Khung viền đôi chuẩn Bách Khoa ---
+\begin{tikzpicture}[remember picture, overlay]
+  \draw[line width=0.16cm, color=black]
+    ([xshift=13mm, yshift=-13mm]current page.north west)
+    rectangle
+    ([xshift=-13mm, yshift=13mm]current page.south east);
+  \draw[line width=0.05cm, color=black]
+    ([xshift=15mm, yshift=-15mm]current page.north west)
+    rectangle
+    ([xshift=-15mm, yshift=15mm]current page.south east);
+\end{tikzpicture}
+
+\begin{center}
+\vspace*{-0.5cm}
+
+{\fontsize{14}{17}\selectfont\bfseries
+  ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH\\[2.5pt]
+  TRƯỜNG ĐẠI HỌC BÁCH KHOA\\[2.5pt]
+  KHOA KHOA HỌC \& KỸ THUẬT MÁY TÍNH\par}
+
+\vspace{0.25cm}
+\begin{tikzpicture}
+  \draw[line width=0.6pt] (-3.0,0) -- (-0.2,0);
+  \node at (0,0) {{\large $\bullet$}};
+  \draw[line width=0.6pt] (0.2,0) -- (3.0,0);
+\end{tikzpicture}
+
+\vspace{0.6cm}
+\includegraphics[width=4.4cm]{image/hcmut.png}\par
+
+\vspace{0.7cm}
+{\fontsize{15}{20}\selectfont\bfseries BÁO CÁO BÀI TẬP LỚN\par}
+\vspace{0.2cm}
+{\fontsize{18.5}{20}\selectfont\bfseries \TenMonHoc\par}
+
+\vspace{0.25cm}
+\rule{\textwidth}{1.0pt}
+\vspace{-0.2cm}
+
+{\fontsize{16.5}{22}\selectfont\bfseries\color{blue}
+  \TenDeTai\par}
+
+\vspace{0.2cm}
+\rule{\textwidth}{1.0pt}
+
+\vspace{0.5cm}
+{\fontsize{15}{18}\selectfont\bfseries Lớp: \LopMonHoc{} - Nhóm 6 - Học Kỳ \HocKy\par}
+\vspace{0.2cm}
+{\fontsize{15}{18}\selectfont\bfseries Ngày báo cáo: \NgayNop\par}
+
+\vspace{0.7cm}
+{\fontsize{15}{18}\selectfont\bfseries GVHD: \GVHD\par}
+
+\vspace{0.3cm}
+{\fontsize{12}{18}\selectfont
+\renewcommand{\arraystretch}{1.28}
+\begin{tabular}{|p{6.5cm}<{\centering}|p{3.5cm}<{\centering}|}
+\hline
+\textbf{Sinh Viên} & \textbf{MSSV} \\ \hline
+Nguyễn Anh Thư (NT) & 2313385 \\ \hline
+Phan Ngọc Phương Trinh & 2313582 \\ \hline
+Lê Trần Bảo Nhi & 2312499 \\ \hline
+Phạm Công Võ & 2313946 \\ \hline
+\end{tabular}\par}
+
+\vfill
+{\fontsize{13}{19}\selectfont TP.Hồ Chí Minh, Tháng 12/2026\par}
+\vspace*{0.1cm}
+
+\end{center}
+\end{titlepage}
+\restoregeometry
