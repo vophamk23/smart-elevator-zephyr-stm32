@@ -1,4 +1,4 @@
-# Hướng dẫn Đọc Code & Vận hành Hệ thống Thang máy Thông minh 7 Tầng
+# Vận hành Hệ thống Thang máy Thông minh 7 Tầng
 
 Dự án điều khiển thang máy **7 tầng** chạy trên hệ điều hành thời gian thực **Zephyr RTOS v4.4.0** cho bo mạch **BKIT ARM4 (`STM32F407ZGT6`)**, kèm phần mềm mô phỏng & theo dõi trên máy tính **PC Digital Twin (`pc_hil_twin/`)**.
 
