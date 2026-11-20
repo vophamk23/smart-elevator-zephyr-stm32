@@ -3,6 +3,22 @@
  * @brief Hiện thực Trình điều khiển Màn hình màu TFT-LCD 240x320 (ILI9341 - FSMC 16-bit)
  *        Hệ thống Thang máy Thông minh BKIT ARM4 (STM32F407ZGT6).
  *
+ * Chức năng tổng quát của file:
+ *  - Cấu hình phần cứng FSMC 16-bit (Bank 1 NOR/PSRAM 1) trên STM32F407ZGT6 nối chip ILI9341.
+ *  - Cung cấp các hàm vẽ đồ họa 2D cơ bản (điểm, khối chữ nhật, chuỗi ký tự ASCII, số lớn, thanh tiến trình).
+ *  - Quản lý giao diện HMI hiển thị thông tin buồng thang 240x320 pixel trực quan thời gian thực.
+ *  - Thực hiện hiệu ứng hoạt họa cuộn số tầng dọc (Vertical Rolling Animation) mượt mà 30-50 FPS.
+ *
+ * Các hàm quan trọng nhất trong file:
+ *  - `bsp_tft_lcd_init()`               : Cấu hình GPIO Port A/C/D/E, thanh ghi FSMC BCR1/BTR1 và gửi chuỗi lệnh khởi động ILI9341.
+ *  - `bsp_tft_lcd_clear()`              : Xóa sạch màn hình theo màu sắc tùy chọn.
+ *  - `bsp_tft_lcd_fill_rect()`          : Tô màu khối chữ nhật qua giao tiếp nạp vùng cửa sổ FSMC.
+ *  - `bsp_tft_lcd_draw_string()`        : Vẽ chuỗi ký tự theo font ASCII 6x8 tối ưu không tràn viền.
+ *  - `bsp_tft_lcd_draw_big_digit()`     : Vẽ chữ số lớn 24x32 pixel phục vụ hiển thị số tầng trung tâm.
+ *  - `bsp_tft_lcd_draw_progress_bar()`  : Vẽ thanh tiến trình đóng/mở cửa và cân tải trọng kèm viền phân cách.
+ *  - `bsp_tft_lcd_render_dashboard()`   : Render toàn diện 4 khối giao diện (Header, Số tầng/Hàng đợi, Cửa/Rèm quang, Cảm biến/Hộp đen) và các popup sự cố (Quá tải, Báo cháy, E-Stop).
+ *  - `bsp_tft_lcd_animate_floor_rolling()` : Hoạt họa cuộn trượt số tầng dọc khi cabin di chuyển qua các tầng.
+ *
  * Sơ đồ chân phần cứng (Mục 5.3 QuickStartGuide BKIT ARM4):
  *  - Data Bus 16-bit: PD14(D0), PD15(D1), PD0(D2), PD1(D3), PE7..PE15(D4..D12), PD8..PD10(D13..D15)
  *  - Điều khiển: RS=PE3 (FSMC_A19), CS=PD7 (FSMC_NE1), WR=PD5 (FSMC_NWE), RD=PD4 (FSMC_NOE)

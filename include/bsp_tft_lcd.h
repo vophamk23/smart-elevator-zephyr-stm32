@@ -3,7 +3,7 @@
  * @brief Trình điều khiển Màn hình màu Đồ họa TFT-LCD 240x320 (ILI9341 - FSMC 16-bit)
  *        Hệ thống Thang máy Thông minh BKIT ARM4 (STM32F407ZGT6).
  *
- * Chức năng:
+ * Chức năng tổng quát của file:
  *  - Khởi tạo phần cứng bus song song FSMC 16-bit (Bank 1 NE1, A19-RS, PD/PE data pins).
  *  - Cung cấp các hàm vẽ đồ họa nguyên thủy (Pixel, FillRect, DrawRect, String, BigDigit, ProgressBar).
  *  - Render giao diện HMI trực quan cho 7 trạng thái thang máy:
@@ -14,6 +14,15 @@
  *      5. Báo cháy khẩn cấp & sơ tán về Tầng 1 (Fire Alarm từ nhiệt độ LM35 >= 60 C).
  *      6. Dừng khẩn cấp do người dùng (Emergency Stop qua phím E-Stop).
  *      7. Chế độ Chờ / Nghỉ tiết kiệm điện (Standby / Night Mode).
+ *
+ * Các hàm quan trọng nhất trong file:
+ *  - `bsp_tft_lcd_init()`                 : Khởi tạo GPIO, thanh ghi FSMC và chip ILI9341.
+ *  - `bsp_tft_lcd_clear()`                : Xóa trắng/đen toàn bộ màn hình.
+ *  - `bsp_tft_lcd_draw_string()`          : Vẽ chuỗi văn bản font ASCII 6x8.
+ *  - `bsp_tft_lcd_draw_big_digit()`       : Vẽ số tầng lớn kích thước 24x32 pixel.
+ *  - `bsp_tft_lcd_draw_progress_bar()`    : Vẽ thanh tiến trình trạng thái đóng mở cửa/tải trọng.
+ *  - `bsp_tft_lcd_render_dashboard()`     : Cập nhật giao diện tổng quan HMI 4 khối và các popup khẩn cấp.
+ *  - `bsp_tft_lcd_animate_floor_rolling()`: Hiệu ứng hoạt họa cuộn số tầng dọc khi di chuyển.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

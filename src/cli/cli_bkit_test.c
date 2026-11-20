@@ -15,6 +15,7 @@
  *  - `cmd_bkit_test_spi1()`    : Lệnh `bkit test spi1` — Thử hiển thị 4 LED 7 đoạn & quét phím ma trận 4x4 (74HC165) trên SPI1.
  *  - `cmd_bkit_test_spi2()`    : Lệnh `bkit test spi2` — Đọc mã JEDEC ID (`EF 40 17`) của chip Flash ngoài W25Q64FV (SPI2).
  *  - `cmd_bkit_test_can()`     : Lệnh `bkit test can` — Bắn khung CAN PING (`0x380`) hoặc RTR (`0x200`) và đo RTT (us).
+ *  - `cmd_bkit_test_lcd()`     : Lệnh `bkit test lcd` — Vẽ thanh màu thử nghiệm và kiểm tra màn hình màu TFT-LCD 240x320 (FSMC 16-bit).
  *  - `cmd_bkit_test_wdt_hang()`: Lệnh `bkit test wdt_hang` — Ngừng nạp IWDG để kiểm chứng tự reset MCU sau ~2500 ms.
  *  - `cmd_bkit_stats()`        : Lệnh `bkit stats` — In nguyên nhân reset, UID MCU và mức tiêu thụ Stack của toàn bộ luồng RTOS.
  *

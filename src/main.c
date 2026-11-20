@@ -3,19 +3,19 @@
  * @brief Điểm vào chính và Bộ điều phối 7 luồng RTOS tĩnh hướng sự kiện (BKIT ARM4 Smart Elevator).
  *
  * Chức năng tổng quát của file:
- *  - Khởi tạo toàn bộ trình điều khiển phần cứng (Watchdog, GPIO/EXTI, PWM, ADC, SPI1/2, I2C1, CAN1)
+ *  - Khởi tạo toàn bộ trình điều khiển phần cứng (Watchdog, GPIO/EXTI, PWM, ADC, SPI1/2, I2C1, CAN1, TFT-LCD FSMC)
  *    và máy trạng thái trung tâm HSM.
  *  - Định nghĩa 7 luồng RTOS tĩnh (`K_THREAD_DEFINE`) và 3 bộ định thời (`k_timer`) điều phối toàn hệ thống.
  *
  * Các hàm quan trọng nhất trong file:
- *  - `main()`                       : Khởi tạo toàn bộ ngoại vi, ghi bản ghi bật nguồn vào Hộp đen và kích hoạt 3 `k_timer`.
+ *  - `main()`                       : Khởi tạo toàn bộ ngoại vi (kể cả TFT-LCD ILI9341), ghi bản ghi bật nguồn vào Hộp đen và kích hoạt 3 `k_timer`.
  *  - `on_hw_exti_event()`           : Callback nhận ngắt cứng EXTI (X0 kẹt cửa, X1 E-Stop), đẩy khẩn vào HSM & đánh thức T1.
  *  - `safety_thread_entry()`        : [Luồng T1 - Prio 2] Đọc 5 kênh ADC1 & 4 chân X0..X3 mỗi 100 ms, phát hiện cháy/quá tải có trễ Hysteresis.
  *  - `fsm_thread_entry()`           : [Luồng T2 - Prio 3] Chạy vòng lặp xử lý sự kiện của Máy trạng thái HSM 9 trạng thái.
  *  - `can_rx_thread_entry()`        : [Luồng T3a - Prio 4] Nhận và giải mã khung CAN từ bộ lọc phần cứng bxCAN1.
  *  - `can_tx_thread_entry()`        : [Luồng T3b - Prio 4] Phát định kỳ Heartbeat/Status CAN mỗi 250 ms & phục hồi lỗi BUS-OFF.
  *  - `can_wdt_thread_entry()`       : [Luồng T3c - Prio 4] Giám sát mất nhịp tim CAN quá 2000 ms để kích hoạt Fail-Safe.
- *  - `hmi_thread_entry()`           : [Luồng T4 - Prio 5] Quét 4 LED 7 đoạn (100 Hz), quét bàn phím 4x4 (50 ms), tắt còi PWM & nháy LED3.
+ *  - `hmi_thread_entry()`           : [Luồng T4 - Prio 5] Quét 4 LED 7 đoạn (100 Hz), render TFT-LCD 240x320 (10 Hz), quét bàn phím 4x4 (50 ms), tắt còi PWM & nháy LED3.
  *  - `telemetry_wdt_thread_entry()` : [Luồng T5 - Prio 8] Kiểm tra 4 luồng điểm danh để nạp IWDG và xuất chuỗi JSON `$TWIN` mỗi 200 ms.
  *
  * SPDX-License-Identifier: Apache-2.0
