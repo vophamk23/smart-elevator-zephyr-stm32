@@ -36,6 +36,7 @@
 #include "bsp_i2c_storage.h"
 #include "bsp_pwm_buzzer.h"
 #include "bsp_spi_hmi.h"
+#include "bsp_tft_lcd.h"
 #include "bsp_watchdog.h"
 #include "can_bus.h"
 
@@ -247,6 +248,39 @@ static int cmd_bkit_test_wdt_hang(const struct shell *sh, size_t argc, char **ar
 }
 
 /**
+ * @brief Lệnh `bkit test lcd`: kiểm tra hiển thị màn hình màu TFT-LCD 240x320 qua FSMC 16-bit.
+ */
+static int cmd_bkit_test_lcd(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	shell_print(sh, "Testing ILI9341 FSMC 16-bit TFT-LCD (240x320)...");
+	int err = bsp_tft_lcd_init();
+	if (err < 0) {
+		shell_error(sh, "LCD init failed (%d)", err);
+		return err;
+	}
+
+	/* Vẽ các thanh màu kiểm tra RGB565 */
+	bsp_tft_lcd_fill_rect(10, 25, 220, 25, LCD_COLOR_RED);
+	bsp_tft_lcd_fill_rect(10, 55, 220, 25, LCD_COLOR_GREEN);
+	bsp_tft_lcd_fill_rect(10, 85, 220, 25, LCD_COLOR_CYAN);
+	bsp_tft_lcd_fill_rect(10, 115, 220, 25, LCD_COLOR_YELLOW);
+
+	bsp_tft_lcd_draw_string(20, 33, "TEST: RED COLOR OK", LCD_COLOR_WHITE, LCD_COLOR_RED);
+	bsp_tft_lcd_draw_string(20, 63, "TEST: GREEN COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_GREEN);
+	bsp_tft_lcd_draw_string(20, 93, "TEST: CYAN COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_CYAN);
+	bsp_tft_lcd_draw_string(20, 123, "TEST: YELLOW COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_YELLOW);
+
+	bsp_tft_lcd_draw_big_digit(108, 160, '7', LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+	bsp_tft_lcd_draw_string(50, 210, "BKIT TFT-LCD: PASS", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
+
+	shell_print(sh, "TFT-LCD self-test passed: test patterns rendered successfully!");
+	return 0;
+}
+
+/**
  * @brief Lệnh `bkit stats`: in lý do reset từ HWINFO, UID chip và mức tiêu thụ stack/CPU của toàn bộ luồng RTOS.
  */
 static int cmd_bkit_stats(const struct shell *sh, size_t argc, char **argv)
@@ -280,6 +314,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_bkit_test,
 	SHELL_CMD_ARG(spi1, NULL, "Test SPI1 7-seg + keypad [hex_pattern]", cmd_bkit_test_spi1, 1, 1),
 	SHELL_CMD(spi2, NULL, "Read W25Q64FV JEDEC ID on SPI2", cmd_bkit_test_spi2),
 	SHELL_CMD_ARG(can, NULL, "Send CAN1 PING or RTR [rtr] & inspect TEC/REC/RTT", cmd_bkit_test_can, 1, 1),
+	SHELL_CMD(lcd, NULL, "Test ILI9341 FSMC 16-bit TFT-LCD 240x320", cmd_bkit_test_lcd),
 	SHELL_CMD(wdt_hang, NULL, "Stop feeding IWDG to verify hardware watchdog reset", cmd_bkit_test_wdt_hang),
 	SHELL_SUBCMD_SET_END
 );

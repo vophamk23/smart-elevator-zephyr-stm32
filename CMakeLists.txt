@@ -18,6 +18,7 @@ target_sources(app PRIVATE
     src/bsp/bsp_spi_hmi.c
     src/bsp/bsp_i2c_storage.c
     src/bsp/bsp_watchdog.c
+    src/bsp/bsp_tft_lcd.c
 
     # Core Safety Control & Scheduling Logic
     src/core/elevator_scheduler.c

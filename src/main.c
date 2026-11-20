@@ -31,6 +31,7 @@
 #include "bsp_i2c_storage.h"
 #include "bsp_pwm_buzzer.h"
 #include "bsp_spi_hmi.h"
+#include "bsp_tft_lcd.h"
 #include "bsp_watchdog.h"
 #include "can_bus.h"
 #include "elevator_hsm.h"
@@ -321,6 +322,22 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 
 		(void)bsp_spi_7seg_render_status(disp_floor, disp_dir, disp_fire, disp_fault);
 
+		/* Cập nhật Màn hình đồ họa màu TFT-LCD 240x320 (ILI9341 - FSMC 16-bit) mỗi 100 ms */
+		if ((tick_div % 10U) == 0U) {
+			bkit_adc_snapshot_t adc_snap;
+			(void)bsp_adc_read_all(&adc_snap);
+			float load_kg = (float)adc_snap.load_kg;
+			float temp_c = (float)adc_snap.temp_deci_c / 10.0f;
+			bool x0_door = false;
+			bsp_gpio_read_inputs(&x0_door, NULL, NULL, NULL);
+			bool curtain_blocked = x0_door || (adc_snap.light_mv > 3000U);
+			uint8_t call_mask = tel.cabin_mask | tel.hall_up_mask | tel.hall_down_mask;
+
+			bsp_tft_lcd_render_dashboard(&tel, call_mask, tel.door_pct,
+						     load_kg, temp_c, curtain_blocked,
+						     elevator_state_str((elevator_state_t)tel.state));
+		}
+
 		/* Nháy nhanh LED PE4 (chu kỳ 200 ms) khi có cháy/lỗi, hoặc nháy chậm 800 ms khi bình thường */
 		uint32_t blink_period = (disp_fire || disp_fault) ? 10U : 40U;
 		if ((tick_div % blink_period) == 0U) {
@@ -473,6 +490,7 @@ int main(void)
 	(void)bsp_pwm_buzzer_init();
 	(void)bsp_adc_init();
 	(void)bsp_spi_hmi_init();
+	(void)bsp_tft_lcd_init();
 	(void)bsp_i2c_storage_init();
 
 	(void)elevator_hsm_init();
