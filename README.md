@@ -463,41 +463,7 @@ Thư mục `smart_elevator_zephyr/pc_hil_twin/` cung cấp một ứng dụng m�
 
 ---
 
-## 10. Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code
-
-> [!TIP]
-> **Giải đáp thắc mắc: "Nạp code trên máy tính khác có làm y như vậy được không?"**  
-> * **KHÔNG THỂ gõ y nguyên dòng lệnh kích hoạt venv**, vì đường dẫn `C:\Users\ASUS\...` là tên tài khoản riêng của máy tính hiện tại. Trên máy khác (máy của thành viên khác trong nhóm, laptop đi thi/vấn đáp, hoặc máy phòng lab), tên thư mục người dùng sẽ khác (ví dụ: `C:\Users\Admin`, `C:\Users\Dell`...).
-> * **Lệnh `west flash`** đòi hỏi máy tính đó phải cài đầy đủ bộ công cụ Zephyr SDK (~2 GB) và OpenOCD.
-> * **GIẢI PHÁP TỐI ƯU CHO MỌI MÁY:** Bạn hãy dùng **Phương pháp 1** bên dưới — chỉ cần cài phần mềm nạp **STM32CubeProgrammer** (nhẹ ~100 MB), nạp file `.hex` / `.bin` đã build sẵn trực tiếp xuống kit trong 3 giây mà **KHÔNG CẦN cài đặt Zephyr RTOS**!
-
----
-
-### 10.1. Phương pháp 1: Nạp trực tiếp Firmware cho MỌI MÁY TÍNH (Không cần cài Zephyr)
-
-Đây là cách đơn giản và an toàn nhất khi mang bo mạch đi báo cáo, chuyển máy cho bạn cùng nhóm, hoặc demo trên máy tính bất kỳ:
-
-1. **Chuẩn bị file chạy nhị phân:**
-   * File firmware đã được biên dịch sẵn nằm tại:
-     * `smart_elevator_zephyr/build/zephyr/zephyr.hex` (Khuyên dùng: file đã chứa sẵn địa chỉ bộ nhớ Flash).
-     * `smart_elevator_zephyr/build/zephyr/zephyr.bin` (Kích thước `112,272 Bytes`).
-   * Bạn có thể chép thư mục `build/zephyr/` vào USB hoặc tải về máy bất kỳ.
-2. **Cài đặt phần mềm nạp ST-LINK:**
-   * Tải và cài đặt phần mềm miễn phí [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html) (hoặc [STM32 ST-LINK Utility](https://www.st.com/en/development-tools/stsw-link004.html)).
-   * Cài đặt Driver nạp [STSW-LINK009 USB Driver](https://www.st.com/en/development-tools/stsw-link009.html) nếu máy chưa nhận mạch nạp.
-3. **Thao tác nạp xuống Bo mạch BKIT ARM4:**
-   * **BƯỚC BẮT BUỘC:** Gạt công tắc chuyển mạch **`SW11 = ON`** trên bo mạch để nối đường nạp SWD/JTAG vào chip STM32F407.
-   * Cắm cáp USB ST-LINK từ bo mạch vào cổng USB máy tính.
-   * Mở phần mềm **STM32CubeProgrammer** $\rightarrow$ Nhấn nút **Connect** màu xanh lá (góc trên bên phải).
-   * Nhấn nút **Open File** $\rightarrow$ Chọn file `zephyr.hex` (hoặc chọn `zephyr.bin` và nhập địa chỉ `0x08000000`).
-   * Nhấn nút **Download** (hoặc **Start Programming**).
-   * Sau ~3 giây, phần mềm báo `File download complete` $\rightarrow$ Nhấn **Disconnect** $\rightarrow$ Bấm nút **RESET (RST)** trên bo mạch là thang máy khởi động chạy ngay!
-
----
-
-### 10.2. Phương pháp 2: Biên dịch & Nạp Code trên Máy Phát triển (Đã cài Zephyr SDK)
-
-Dành cho máy tính phát triển có cài đặt đầy đủ môi trường Zephyr RTOS:
+## 10. Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code (Đã cài Zephyr SDK)
 
 ```powershell
 # 1. Kích hoạt môi trường ảo Python của Zephyr (thay <Ten_User_Cua_Ban> tương ứng)
@@ -530,9 +496,7 @@ Memory region         Used Size  Region Size  %age Used
              RAM:       28608 B       128 KB     21.83%
 ```
 
----
-
-### 10.3. Khởi chạy Phần mềm Giám sát PC HIL Digital Twin
+### Khởi chạy Phần mềm Giám sát PC HIL Digital Twin
 
 Phần mềm Digital Twin chạy hoàn toàn độc lập bằng Python trên bất kỳ máy tính Windows nào:
 
@@ -546,10 +510,9 @@ pip install pyserial
 # 3. Khởi chạy giao diện mô phỏng thang máy 7 tầng
 python elevator_twin.py
 ```
-* **Chưa cắm mạch thật:** Nhấn **▶ Khởi động Offline Sim** để kiểm tra thuật toán LOOK và chuyển tầng ảo.
-* **Đã cắm cáp UART RS232 (PA9/PA10):** Chọn đúng cổng `COMx` ở tốc độ `115200` $\rightarrow$ Nhấn **Kết nối RS232** để cabin máy tính đồng bộ trực tiếp theo trạng thái cảm biến trên bo mạch.
 
----
+- **Chưa cắm mạch thật:** Nhấn **▶ Khởi động Offline Sim** để kiểm tra thuật toán LOOK và chuyển tầng ảo.
+- **Đã cắm cáp UART RS232 (PA9/PA10):** Chọn đúng cổng `COMx` ở tốc độ `115200` $\rightarrow$ Nhấn **Kết nối RS232** để cabin máy tính đồng bộ trực tiếp theo trạng thái cảm biến trên bo mạch.
 
 ## 11. Bảng Ticker Lệnh Shell Console (`bkit test` & `elev`) & Output Mẫu
 
@@ -585,8 +548,6 @@ Kết nối cáp chuyển đổi USB-to-UART vào chân `PA9 (TX)` và `PA10 (RX
 | **`[ ] EL-06`** | `elev coverage`                      | Không có                                                                                                                                          | In ma trận đếm số lần chuyển dịch trạng thái $[9][9]$ của máy trạng thái HSM và thống kê truyền thông mạng CAN.              | In ma trận $9 \times 9$ trực quan, hiển thị các nhánh FSM đã được duyệt qua trong phiên chạy.                                                                                                      | Chứng minh độ phủ kiểm thử nhánh đạt $100\%$ khi nghiệm thu BTL.          |
 | **`[ ] EL-07`** | `elev mode <mode>`                   | `loopback`: Tự lặp nội bộ<br>`normal`: Chạy mạng thật                                                                                             | Chuyển chế độ hoạt động của bộ điều khiển `bxCAN1` giữa 1 bo mạch độc lập và 2 bo mạch liên kết.                             | Thay đổi thanh ghi `CAN_BTR` tức thì mà không cần khởi động lại vi điều khiển.                                                                                                                     | Thuận tiện chuyển đổi giữa bài test đơn lẻ và kết nối hệ thống BMS.       |
 | **`[ ] EL-08`** | `elev role <role>`                   | `cabin`: Tủ điều khiển buồng<br>`hall`: Bảng gọi tầng sảnh                                                                                        | Định vị vai trò nút mạng CAN cho bo mạch BKIT ARM4 khi đấu nối liên lạc nhiều bo mạch song song.                             | Cập nhật cấu hình bộ lọc phần cứng (Hardware Acceptance Filter) theo ID tương ứng.                                                                                                                 | Gói tin CAN lọc đúng địa chỉ, không làm quá tải CPU luồng nhận.           |
-
----
 
 ### 11.3. Trích xuất Đầu ra Mẫu Thực tế trên UART Terminal Console
 
