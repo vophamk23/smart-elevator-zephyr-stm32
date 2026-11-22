@@ -1,75 +1,146 @@
-# ĐẠI HỌC QUỐC GIA TP. HỒ CHÍ MINH — TRƯỜNG ĐẠI HỌC BÁCH KHOA
+# ĐẠI HỌC QUỐC GIA THÀNH PHỐ HỒ CHÍ MINH — TRƯỜNG ĐẠI HỌC BÁCH KHOA
 ## KHOA KHOA HỌC & KỸ THUẬT MÁY TÍNH — BỘ MÔN KỸ THUẬT MÁY TÍNH
-### BÀI TẬP LỚN MÔN HỌC: HỆ THỐNG NHÚNG (CO3053) — HK261
+### BÀI TẬP LỚN MÔN HỌC: HỆ THỐNG NHÚNG (CO3053) — HỌC KỲ HK261
 
 ---
 
-# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY THÔNG MINH 7 TẦNG AN TOÀN TRỌNG YẾU THỜI GIAN THỰC TRÊN ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
+# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY THÔNG MINH 7 TẦNG AN TOÀN TRỌNG YẾU THỜI GIAN THỰC TRÊN NỀN TẢNG ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
 
-[![Zephyr RTOS](https://img.shields.io/badge/Zephyr%20RTOS-v4.4.0-007ACC?logo=zephyrproject&logoColor=white)](https://zephyrproject.org/)
-[![Target MCU](https://img.shields.io/badge/MCU-STM32F407ZGT6%20%28ARM%20Cortex--M4F%20168MHz%29-blue?logo=stmicroelectronics)](https://www.st.com/en/microcontrollers-microprocessors/stm32f407zg.html)
-[![Kit BKIT ARM4](https://img.shields.io/badge/Kit-BKIT%20ARM4%20%28HCMUT%20CSE%29-orange)](#6-phần-cứng-kit-bkit-arm4-công-tắc-dip-switch--15-ngoại-vi)
-[![Display FSMC](https://img.shields.io/badge/Display-TFT--LCD%20240x320%20FSMC%2016--bit%20%28ILI9341%2050FPS%29-success)](#5-giao-diện-người---máy-hmi-kép)
-[![HIL Simulation](https://img.shields.io/badge/HIL%20Twin-PC%20Digital%20Twin%20%28Python%20Tkinter%29-green?logo=python)](pc_hil_twin/)
-[![CAN Bus](https://img.shields.io/badge/CAN%20Bus-2.0B%20500kbps%20%28Hardware%20Filter%29-yellow)](#6-phần-cứng-kit-bkit-arm4-công-tắc-dip-switch--15-ngoại-vi)
-[![Blackbox](https://img.shields.io/badge/Blackbox-AT24C512%20EEPROM%20%2B%20RTC%20DS3231%20%28CRC32%29-purple)](#2-trình-tự-khởi-động-hệ-thống-hàm-main-11-bước)
-[![Safety Standard](https://img.shields.io/badge/Safety-Hard%20Real--Time%20%28E--Stop%20%3C%2012%CE%BCs%29-red)](#4-nguyên-lý-điều-phối-lookscan--bốn-quy-tắc-an-toàn-bất-biến)
-
----
-
-## Sơ lược Dự án & Thông tin Đồ án
-
-> [!NOTE]
-> **Đồ án Bài tập lớn Môn học Hệ thống Nhúng (CO3053)**  
-> **Khoa Khoa học & Kỹ thuật Máy tính — Trường Đại học Bách Khoa, ĐHQG-HCM**  
-> * **Giảng viên hướng dẫn:** Thầy Nguyễn Hòa Hưng  
-> * **Nhóm thực hiện:** Nhóm 6 — Lớp L01 — Học kỳ HK261  
-> * **Thành viên nhóm:**  
->   1. **Nguyễn Anh Thư (Nhóm trưởng)** — MSSV: `2313385` (Thiết kế FSM, bộ lập lịch LOOK/SCAN, quản lý dự án)  
->   2. **Phan Ngọc Phương Trinh** — MSSV: `2313582` (Trình điều khiển FSMC 16-bit TFT-LCD ILI9341, cuộn số dọc, Dashboard)  
->   3. **Lê Trần Bảo Nhi** — MSSV: `2312499` (Trình điều khiển SPI LED 7 đoạn & phím ma trận, Hộp đen EEPROM & RTC)  
->   4. **Phạm Công Võ** — MSSV: `2313946` (Cấu hình Zephyr RTOS, mạng CAN Bus, mô phỏng PC HIL Digital Twin & kịch bản kiểm thử)
-
-### Mục tiêu Kỹ thuật Trọng tâm:
-Dự án tập trung nghiên cứu, thiết kế và hiện thực một hệ thống điều khiển thang máy công nghiệp **7 tầng** an toàn trọng yếu (**Safety-Critical**) và đạt tiêu chuẩn thời gian thực nghiêm ngặt (**Hard Real-Time**). Toàn bộ hệ thống chạy trên vi điều khiển **STM32F407ZGT6** thuộc bo mạch **BKIT ARM4**, được điều phối bởi hệ điều hành thời gian thực tiên tiến **Zephyr RTOS v4.4.0**.
-
-### Chỉ số Hiệu năng Đo đạc Thực tế (KPIs):
-* **Thời gian ngắt phanh khẩn cấp (E-Stop EXTI Latency):** $\mathbf{11.8\ \mu\text{s}}$ (đáp ứng tiêu chuẩn IEC 61508 SIL-2 đòi hỏi $< 50\ \text{ms}$).
-* **Thời gian phản ứng rèm quang kẹt cửa (Light Curtain Reaction):** $\mathbf{42.5\ \text{ms}}$ (tiêu chuẩn thang máy an toàn yêu cầu $< 100\ \text{ms}$).
-* **Tốc độ quét giao diện đồ họa màu TFT-LCD:** $\mathbf{\sim 50\text{ FPS}}$ thông qua bus vi sai song song **FSMC 16-bit** (không bị giật khung hình).
-* **Mức chiếm dụng bộ nhớ:** ROM Flash chỉ chiếm **`10.71%`** (112 KB / 1 MB) và RAM chiếm **`21.83%`** (28.6 KB / 128 KB).
-* **Quản lý bộ nhớ:** **`100% Static Allocation`** — Tuyệt đối không dùng `malloc/free` trong toàn bộ firmware, triệt tiêu phân mảnh RAM và rò rỉ bộ nhớ.
+<p align="center">
+  <img src="https://img.shields.io/badge/RTOS-Zephyr%20RTOS%20v4.4.0-007ACC?style=for-the-badge&logo=zephyrproject&logoColor=white" alt="Zephyr RTOS"/>
+  <img src="https://img.shields.io/badge/MCU-STM32F407ZGT6%20%7C%20Cortex--M4F%20168MHz-blue?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32F407"/>
+  <img src="https://img.shields.io/badge/Hardware-BKIT%20ARM4%20(HCMUT%20CSE)-orange?style=for-the-badge" alt="BKIT ARM4"/>
+  <img src="https://img.shields.io/badge/Graphics-TFT--LCD%20240x320%20FSMC%2016--bit-2ea44f?style=for-the-badge" alt="TFT-LCD FSMC"/>
+  <img src="https://img.shields.io/badge/CAN%20Bus-CAN%202.0B%20%40%20500kbps-yellow?style=for-the-badge" alt="CAN Bus"/>
+  <img src="https://img.shields.io/badge/Safety-Hard%20Real--Time%20%7C%20IEC%2061508-red?style=for-the-badge" alt="Safety Hard Real-Time"/>
+  <img src="https://img.shields.io/badge/Simulation-HIL%20Digital%20Twin%20(Python)-blueviolet?style=for-the-badge&logo=python&logoColor=white" alt="Python HIL Twin"/>
+</p>
 
 ---
 
-## Mục lục
+## Mục lục Toàn diện
 
-1. [Cấu trúc Thư mục & Phân tầng Module Firmware](#1-cấu-trúc-thư-mục--phân-tầng-module-firmware)
-2. [Trình tự Khởi động Hệ thống: Hàm `main()` 11 Bước](#2-trình-tự-khởi-động-hệ-thống-hàm-main-11-bước)
-3. [Kiến trúc Đa luồng Zephyr RTOS (7 Luồng tĩnh)](#3-kiến-trúc-đa-luồng-zephyr-rtos-7-luồng-tĩnh)
-4. [Nguyên lý Điều phối LOOK/SCAN & Bốn Quy tắc An toàn Bất biến](#4-nguyên-lý-điều-phối-lookscan--bốn-quy-tắc-an-toàn-bất-biến)
-5. [Giao diện Người - Máy (HMI Kép)](#5-giao-diện-người---máy-hmi-kép)
-   - [5.1. Màn hình màu TFT-LCD 240x320 qua Bus Song song FSMC 16-bit](#51-màn-hình-màu-tft-lcd-240x320-qua-bus-song-song-fsmc-16-bit)
-   - [5.2. Cụm 4 LED 7 đoạn Ngoài sảnh (74HC595 qua SPI1)](#52-cụm-4-led-7-đoạn-ngoài-sảnh-74hc595-qua-spi1)
-   - [5.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1)](#53-bảng-ma-trận-16-phím-bấm-74hc165-qua-spi1)
-6. [Phần cứng Kit BKIT ARM4: Công tắc DIP Switch & 15 Ngoại vi](#6-phần-cứng-kit-bkit-arm4-công-tắc-dip-switch--15-ngoại-vi)
-7. [Bảng Ticker 9 Kịch bản Kiểm thử & Demo Thực nghiệm trên Bo mạch](#7-bảng-ticker-9-kịch-bản-kiểm-thử--demo-thực-nghiệm-trên-bo-mạch)
-8. [Mô hình Mô phỏng HIL Digital Twin trên Máy tính (`pc_hil_twin/`)](#8-mô-hình-mô-phỏng-hil-digital-twin-trên-máy-tính-pc_hil_twin)
-9. [Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code](#9-hướng-dẫn-cài-đặt-môi-trường-biên-dịch--nạp-code)
-10. [Bảng Ticker Lệnh Shell Console (`bkit test` & `elev`) & Output Mẫu](#10-bảng-ticker-lệnh-shell-console-bkit-test--elev--output-mẫu)
-11. [Từ điển Tra cứu Nhanh: File nào chứa Hàm gì?](#11-từ-điển-tra-cứu-nhanh-file-nào-chứa-hàm-gì)
+1. [Giới thiệu Dự án & Bối cảnh Đồ án](#1-giới-thiệu-dự-án--bối-cảnh-đồ-án)
+   - [1.1. Bối cảnh & Tầm nhìn Kỹ thuật](#11-bối-cảnh--tầm-nhìn-kỹ-thuật)
+   - [1.2. Mục tiêu Kỹ thuật & Phạm vi Đồ án](#12-mục-tiêu-kỹ-thuật--phạm-vi-đồ-án)
+   - [1.3. Nhãn Công nghệ & Nền tảng Kỹ thuật (Tech Stack Matrix)](#13-nhãn-công-nghệ--nền-tảng-kỹ-thuật-tech-stack-matrix)
+   - [1.4. Chỉ số Hiệu năng Đo đạc Thực tế (KPIs)](#14-chỉ-số-hiệu-năng-đo-đạc-thực-tế-kpis)
+   - [1.5. Thông tin Nhóm Tác giả & Giảng viên Hướng dẫn](#15-thông-tin-nhóm-tác-giả--giảng-viên-hướng-dẫn)
+2. [Kiến trúc Phân tầng & Cấu trúc Thư mục Mã nguồn](#2-kiến-trúc-phân-tầng--cấu-trúc-thư-mục-mã-nguồn)
+3. [Trình tự Khởi động Phần cứng: Hàm `main()` 11 Bước](#3-trình-tự-khởi-động-phần-cứng-hàm-main-11-bước)
+4. [Kiến trúc Đa luồng Tiền định Zephyr RTOS (7 Luồng Tĩnh)](#4-kiến-trúc-đa-luồng-tiền-định-zephyr-rtos-7-luồng-tĩnh)
+5. [Bộ não Điều khiển: Máy Trạng thái HSM & Thuật toán LOOK/SCAN](#5-bộ-não-điều-khiển-máy-trạng-thái-hsm--thuật-toán-lookscan)
+   - [5.1. Máy trạng thái phân cấp HSM 9 trạng thái](#51-máy-trạng-thái-phân-cấp-hsm-9-trạng-thái)
+   - [5.2. Thuật toán điều phối gom khách LOOK / SCAN hai chiều 7 tầng](#52-thuật-toán-điều-phối-gom-khách-look--scan-hai-chiều-7-tầng)
+   - [5.3. Bốn quy tắc an toàn bất biến (Safety Invariants)](#53-bốn-quy-tắc-an-toàn-bất-biến-safety-invariants)
+6. [Giao diện Người - Máy (HMI Kép)](#6-giao-diện-người---máy-hmi-kép)
+   - [6.1. Màn hình màu TFT-LCD 240x320 qua Bus Song song FSMC 16-bit (ILI9341 50 FPS)](#61-màn-hình-màu-tft-lcd-240x320-qua-bus-song-song-fsmc-16-bit-ili9341-50-fps)
+   - [6.2. Cụm 4 LED 7 đoạn Ngoài sảnh (74HC595 qua SPI1)](#62-cụm-4-led-7-đoạn-ngoài-sảnh-74hc595-qua-spi1)
+   - [6.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1)](#63-bảng-ma-trận-16-phím-bấm-74hc165-qua-spi1)
+7. [Phần cứng Kit BKIT ARM4: Công tắc DIP Switch & 15 Ngoại vi](#7-phần-cứng-kit-bkit-arm4-công-tắc-dip-switch--15-ngoại-vi)
+8. [Bảng Ticker 9 Kịch bản Kiểm thử & Demo Thực nghiệm trên Bo mạch](#8-bảng-ticker-9-kịch-bản-kiểm-thử--demo-thực-nghiệm-trên-bo-mạch)
+   - [8.1. Bảng Ticker Tổng hợp Kiểm thử Thực tế (`[ ] KB-01` .. `[ ] KB-09`)](#81-bảng-ticker-tổng-hợp-kiểm-thử-thực-tế--kb-01---kb-09)
+   - [8.2. Hướng dẫn Thao tác Thực nghiệm Chi tiết Từng Kịch bản](#82-hướng-dẫn-thao-tác-thực-nghiệm-chi-tiết-từng-kịch-bản)
+9. [Mô hình Mô phỏng HIL Digital Twin trên Máy tính (`pc_hil_twin/`)](#9-mô-hình-mô-phỏng-hil-digital-twin-trên-máy-tính-pc_hil_twin)
+10. [Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code](#10-hướng-dẫn-cài-đặt-môi-trường-biên-dịch--nạp-code)
+11. [Bảng Ticker Lệnh Shell Console (`bkit test` & `elev`) & Output Mẫu](#11-bảng-ticker-lệnh-shell-console-bkit-test--elev--output-mẫu)
+12. [Từ điển Tra cứu Nhanh: File nào chứa Hàm gì?](#12-từ-điển-tra-cứu-nhanh-file-nào-chứa-hàm-gì)
 
 ---
 
-## 1. Cấu trúc Thư mục & Phân tầng Module Firmware
+## 1. Giới thiệu Dự án & Bối cảnh Đồ án
 
-Mã nguồn dự án được đóng gói khoa học theo tiêu chuẩn phân tầng hệ thống nhúng (Layered Embedded Architecture):
+### 1.1. Bối cảnh & Tầm nhìn Kỹ thuật
+
+Trong các tòa nhà thông minh và cao ốc hiện đại, hệ thống thang máy là một hệ thống nhúng **an toàn trọng yếu (Safety-Critical)** và đòi hỏi tính **thời gian thực nghiêm ngặt (Hard Real-Time)**. Bất kỳ một sự cố chậm trễ nào trong việc ngắt động cơ khi kẹt cửa, phanh khẩn cấp hay phát hiện hỏa hoạn đều có thể dẫn đến tai nạn đe dọa trực tiếp tính mạng con người và gây thiệt hại lớn về cơ sở hạ tầng.
+
+Đồ án này được thực hiện trong khuôn khổ môn học **Hệ thống Nhúng (CO3053)** tại Khoa Khoa học & Kỹ thuật Máy tính — Trường Đại học Bách Khoa TP.HCM (ĐHQG-HCM). Dự án giải quyết trọn vẹn bài toán xây dựng một bộ điều khiển thang máy công nghiệp 7 tầng hoàn chỉnh:
+* Vận hành trên bo mạch nhúng chuyên dụng **BKIT ARM4** tích hợp vi điều khiển **STM32F407ZGT6** (lõi ARM Cortex-M4F với FPU @ 168 MHz).
+* Ứng dụng hệ điều hành thời gian thực mã nguồn mở hàng đầu trong công nghiệp: **Zephyr RTOS v4.4.0** với cơ chế định thời ưu tiên tiền định (Preemptive Priority Scheduling).
+* Đảm bảo tính toán toàn diện từ tầng vật lý (Driver ngoại vi, khóa liên động phần cứng) đến tầng logic giải thuật (HSM 9 trạng thái, LOOK/SCAN) và tầng giám sát số hóa (Mạng CAN Bus 500 kbps, HIL Digital Twin mô phỏng thời gian thực).
+
+---
+
+### 1.2. Mục tiêu Kỹ thuật & Phạm vi Đồ án
+
+| Hạng mục Mục tiêu | Yêu cầu Kỹ thuật Đạt chuẩn | Hiện thực trong Dự án |
+| :--- | :--- | :--- |
+| **Tính Thời gian Thực (Hard Real-Time)** | Thời gian đáp ứng ngắt phanh khẩn cấp $< 50\ \text{ms}$ (IEC 61508). | Ngắt ngoài EXTI cắt mô-tơ trong $\mathbf{11.8\ \mu\text{s}}$. Phản ứng rèm quang kẹt cửa $\mathbf{42.5\ \text{ms}}$. |
+| **Độ Tin cậy Bộ nhớ (Reliability)** | Tuyệt đối không để xảy ra Memory Leak, rò rỉ RAM hay phân mảnh heap. | **100% Static Allocation** (dùng `K_THREAD_DEFINE`, `k_msgq_define`, cấm tiệt `malloc/free`). |
+| **Điều phối Tối ưu (Smart Dispatching)** | Giảm thiểu thời gian chờ trung bình (AWT), tránh lãng phí năng lượng kéo cáp. | Thuật toán **LOOK/SCAN** hai chiều quản lý bằng 3 bitmask 7-bit, gom khách thông minh, tự đảo chiều đón vét. |
+| **Giao diện HMI Kép (Dual HMI)** | Trực quan hóa thông tin cho cả hành khách ngoài sảnh và trong buồng thang. | Màn hình màu **TFT-LCD 240x320 qua FSMC 16-bit** (50 FPS, cuộn số dọc) + Cụm **4 LED 7 đoạn** (vạch cuộn SPI1). |
+| **Hộp đen An toàn (Crash Blackbox)** | Lưu giữ dữ liệu sự cố ngay cả khi mất điện đột ngột hoặc sập nguồn. | Lưu 32 sự kiện gần nhất vào **EEPROM AT24C512** qua I2C1 kèm dấu thời gian thực **RTC DS3231** và mã kiểm tra **CRC-32**. |
+| **Giám sát Treo Hệ thống (Fail-Safe)** | Tự động khởi động lại khi có luồng phần mềm bị treo đơ (Lockup). | Bộ đếm phần cứng **IWDG (2.5 giây)** kết hợp cơ chế điểm danh **Cooperative Multi-Thread Watchdog** của 4 luồng RTOS. |
+| **Kiểm thử Bán vật lý (HIL Twin)** | Kiểm chứng toàn bộ ma trận trạng thái FSM theo mô hình chữ V (V-Model). | Phần mềm **PC HIL Digital Twin** bằng Python Tkinter kết nối UART RS232, đồng bộ gói tin JSON `$TWIN` thời gian thực. |
+
+---
+
+### 1.3. Nhãn Công nghệ & Nền tảng Kỹ thuật (Tech Stack Matrix)
+
+Hệ thống được xây dựng dựa trên sự kết hợp của các công nghệ phần cứng, firmware và phần mềm tiên tiến nhất:
+
+| Phân hệ Kỹ thuật | Nhãn Công nghệ / Giao thức | Phiên bản / Thông số Kỹ thuật | Vai trò Cốt lõi trong Dự án |
+| :--- | :--- | :--- | :--- |
+| **Hệ Điều hành RTOS** | `Zephyr RTOS` `Preemption` `DMS` | **v4.4.0** (Kernel Preemptive) | Quản lý 7 luồng tĩnh, Message Queue, Mutex Priority Inheritance, Software Timers. |
+| **Vi Điều khiển (MCU)** | `STM32F407ZGT6` `Cortex-M4F` | **168 MHz**, 1 MB Flash, 128+64 KB SRAM | Xử lý tập lệnh ARMv7E-M, dấu phẩy động FPU, DMA, ngắt vector NVIC lồng nhau. |
+| **Bo mạch Nhúng** | `BKIT ARM4` `HCMUT CSE` | Hardware Kit chuyên dụng BKIT | Tích hợp ngoại vi công nghiệp: rơ-le, opto cách ly quang, CAN PHY, I2C, SPI, FSMC socket. |
+| **Giao diện Đồ họa** | `FSMC 16-bit` `ILI9341` `RGB565` | **240x320 px @ 50 FPS** (Bank 1 NE1) | Bus dữ liệu song song 16-bit, cuộn số trượt dọc (Vertical Rolling), 4 khối Dashboard. |
+| **Giao diện Phụ** | `SPI1` `74HC595` `74HC165` | **Bus SPI 2.625 MHz** | Quét 4 LED 7 đoạn (vạch cuộn động) và ma trận 16 phím bấm gọi tầng / đóng mở cửa. |
+| **Cảm biến An toàn** | `ADC1 12-bit` `EXTI` | 5 kênh ADC: LM35, VR1, LDR, Áp, Dòng | Đo nhiệt độ giếng thang, tải trọng cabin, rèm quang, bắt ngắt cứng kẹt cửa và dừng khẩn. |
+| **Âm thanh Cảnh báo** | `PWM` `TIM13_CH1` | Chân **`PF8`**, Duty Cycle 50% | Phát âm chào mừng bính boong, chuông đến tầng, còi quá tải dồn dập, còi báo cháy hồi dài. |
+| **Lưu trữ Hộp đen** | `I2C1` `AT24C512` `DS3231` | **Fast Mode 400 kHz**, Mã hóa **CRC-32** | Bộ nhớ EEPROM 64 KB lưu 32 bản ghi lỗi có CRC32; đồng hồ RTC bù nhiệt chính xác cao. |
+| **Mạng Công nghiệp** | `bxCAN1` `TJA1050` `CAN 2.0B` | **500 kbps**, Hardware ID Filter | Giao tiếp mạng điều khiển tòa nhà BMS, trạm gọi tầng sảnh, hỗ trợ khung dữ liệu & RTR. |
+| **Giám sát Độc lập** | `IWDG Hardware` `Multi-Thread WDT` | Timeout phần cứng **`2500 ms`** | Ngăn chặn hiện tượng treo luồng RTOS; tự động Hard Reset và ghi nhật ký nguyên nhân. |
+| **Mô phỏng HIL Twin** | `Python 3.12` `Tkinter` `PySerial` | Giao thức viễn trắc **JSON `$TWIN`** | Ứng dụng Desktop PC giả lập cabin chuyển động 7 tầng, tiêm lỗi kiểm thử theo mô hình V-Model. |
+
+---
+
+### 1.4. Chỉ số Hiệu năng Đo đạc Thực tế (KPIs)
+
+```
++───────────────────────────────────────────────────────────────────────────────+
+|               CHỈ SỐ ĐO ĐẠC THỰC NGHIỆM TRÊN PHẦN CỨNG THẬT                   |
++───────────────────────────────────────────────────────────────────────────────+
+|  1. Thời gian đáp ứng ngắt phanh khẩn cấp (E-Stop):       11.8 us             |
+|  2. Thời gian phản ứng rèm quang kẹt cửa (Light Curtain): 42.5 ms             |
+|  3. Chu kỳ làm mới màn hình màu TFT-LCD qua FSMC:         ~20 ms (51.02 FPS)  |
+|  4. Tốc độ truyền thông mạng CAN Bus công nghiệp:         500 kbps (RTT ~180us)|
+|  5. Dung lượng bộ nhớ ROM Flash chiếm dụng:               112,272 B (10.71%)  |
+|  6. Dung lượng bộ nhớ RAM SRAM chiếm dụng:                28,608 B  (21.83%)  |
+|  7. Độ phủ kiểm thử nhánh trạng thái FSM (Branch Coverage): 100% (Ma trận 9x9)|
+|  8. Quản lý cấp phát bộ nhớ động trong Runtime:           0 Byte (100% Static)|
++───────────────────────────────────────────────────────────────────────────────+
+```
+
+---
+
+### 1.5. Thông tin Nhóm Tác giả & Giảng viên Hướng dẫn
+
+* **Cơ sở đào tạo:** Trường Đại học Bách Khoa — Đại học Quốc gia Thành phố Hồ Chí Minh
+* **Khoa:** Khoa học và Kỹ thuật Máy tính (CSE)
+* **Bộ môn:** Kỹ thuật Máy tính
+* **Môn học:** Hệ thống Nhúng (`CO3053`) — Lớp `L01` — Học kỳ `HK261`
+* **Giảng viên Hướng dẫn:** **Thầy Nguyễn Hòa Hưng**
+
+#### Danh sách Sinh viên Thực hiện — Nhóm 6:
+| STT | Họ và Tên | Mã số Sinh viên (MSSV) | Email Sinh viên | Trách nhiệm Kỹ thuật Chính |
+| :---: | :--- | :---: | :--- | :--- |
+| **1** | **Nguyễn Anh Thư** | **`2313385`** | `thu.nguyen2313385@hcmut.edu.vn` | **Nhóm trưởng**: Thiết kế kiến trúc FSM, giải thuật LOOK/SCAN, quản lý tiến độ. |
+| **2** | **Phan Ngọc Phương Trinh** | **`2313582`** | `trinh.phan2313582@hcmut.edu.vn` | Hiện thực Driver FSMC 16-bit TFT-LCD ILI9341, cuộn số dọc 50 FPS, Dashboard HMI. |
+| **3** | **Lê Trần Bảo Nhi** | **`2312499`** | `nhi.le2312499@hcmut.edu.vn` | Hiện thực Driver SPI 4 LED 7 đoạn & bàn phím ma trận, tích hợp Hộp đen EEPROM & RTC. |
+| **4** | **Phạm Công Võ** | **`2313946`** | `vo.pham2313946@hcmut.edu.vn` | Cấu hình Zephyr RTOS, CAN Bus, xây dựng phần mềm PC HIL Digital Twin & kịch bản demo. |
+
+---
+
+## 2. Kiến trúc Phân tầng & Cấu trúc Thư mục Mã nguồn
+
+Mã nguồn dự án được đóng gói khoa học theo tiêu chuẩn phân tầng hệ thống nhúng:
 
 ```text
 smart_elevator_zephyr/
-├── app.overlay                   <-- Device Tree Overlay ánh xạ chân BKIT ARM4 (STM32F407ZGT6)
-├── prj.conf                      <-- Kconfig: Cấu hình nhân RTOS, Preemption, FSMC, CAN, SPI, I2C
-├── CMakeLists.txt                <-- Kịch bản CMake định nghĩa build target và tệp nguồn
+├── app.overlay                   <-- Cấu hình chân phần cứng Device Tree (STM32F407ZGT6)
+├── prj.conf                      <-- Kconfig: Nhân Zephyr RTOS, Preemption, FSMC, CAN, SPI, I2C
+├── CMakeLists.txt                <-- Kịch bản biên dịch Ninja / CMake
 ├── README.md                     <-- (TÀI LIỆU NÀY) Hướng dẫn kỹ thuật và vận hành toàn diện
 │
 ├── include/                      <-- THƯ MỤC HEADER FILES (GIAO DIỆN API)
@@ -114,9 +185,9 @@ smart_elevator_zephyr/
 
 ---
 
-## 2. Trình tự Khởi động Hệ thống: Hàm `main()` 11 Bước
+## 3. Trình tự Khởi động Phần cứng: Hàm `main()` 11 Bước
 
-Khi vừa cấp nguồn hoặc ấn nút **RESET (RST)** trên bo mạch BKIT ARM4, vi điều khiển `STM32F407ZGT6` bắt đầu thực thi hàm `int main(void)` trong [src/main.c](file:///c:/Users/ASUS/Documents/Report/BTL_HeThongNhung/smart_elevator_zephyr/src/main.c) qua đúng **11 bước kiểm tra & khởi tạo phần cứng (Power-On Self-Test - POST)**:
+Khi vừa cấp nguồn hoặc ấn nút **RESET (RST)** trên bo mạch BKIT ARM4, vi điều khiển `STM32F407ZGT6` bắt đầu thực thi hàm `int main(void)` trong [src/main.c](file:///c:/Users/ASUS/Documents/Report/BTL_HeThongNhung/smart_elevator_zephyr/src/main.c) qua đúng **11 bước khởi tạo phần cứng (Power-On Self-Test - POST)**:
 
 ```
 [BẬT NGUỒN / RESET]
@@ -150,9 +221,9 @@ Khi vừa cấp nguồn hoặc ấn nút **RESET (RST)** trên bo mạch BKIT AR
 
 ---
 
-## 3. Kiến trúc Đa luồng Zephyr RTOS (7 Luồng tĩnh)
+## 4. Kiến trúc Đa luồng Tiền định Zephyr RTOS (7 Luồng Tĩnh)
 
-Chương trình tạo sẵn **7 luồng tĩnh** bằng macro `K_THREAD_DEFINE` trong `src/main.c`. Mức ưu tiên được phân bổ chặt chẽ theo nguyên lý **Deadline Monotonic Scheduling (DMS)** (Độ ưu tiên số càng nhỏ thì quyền chiếm quyền CPU càng cao):
+Hệ thống loại bỏ hoàn toàn việc cấp phát bộ nhớ động trong quá trình chạy. Toàn bộ 7 luồng RTOS được khai báo tĩnh bằng macro `K_THREAD_DEFINE` với ngăn xếp chuyên dụng và phân mức ưu tiên theo nguyên lý **Deadline Monotonic Scheduling (DMS)** (Độ ưu tiên số càng nhỏ thì quyền chiếm quyền CPU càng cao):
 
 | Tên Luồng | Mức Ưu tiên | Chu kỳ / Cơ chế Đánh thức | Dung lượng Stack | Trách nhiệm Kỹ thuật Trọng yếu | Tệp Mã nguồn Tương ứng |
 | :--- | :---: | :---: | :---: | :--- | :--- |
@@ -172,41 +243,54 @@ Chương trình tạo sẵn **7 luồng tĩnh** bằng macro `K_THREAD_DEFINE` t
 
 ---
 
-## 4. Nguyên lý Điều phối LOOK/SCAN & Bốn Quy tắc An toàn Bất biến
+## 5. Bộ não Điều khiển: Máy Trạng thái HSM & Thuật toán LOOK/SCAN
 
-### 4.1. Thuật toán Điều phối LOOK / SCAN Hai chiều 7 Tầng (`src/core/elevator_scheduler.c`)
-Thuật toán quản lý yêu cầu di chuyển bằng **3 mặt nạ bit 7-bit** độc lập (`cabin_mask`, `hall_up_mask`, `hall_down_mask`):
+### 5.1. Máy trạng thái phân cấp HSM 9 trạng thái
+
+Hệ thống hoạt động dựa trên máy trạng thái hữu hạn phân cấp gồm 9 trạng thái chuẩn hóa:
+
+```mermaid
+stateDiagram-v2
+    [*] --> STANDBY_CLOSED : Khởi động / Boot xong
+    STANDBY_CLOSED --> ACCELERATING : Có lệnh gọi tầng
+    ACCELERATING --> MOVING_CRUISE : Đạt tốc độ định mức
+    MOVING_CRUISE --> DECELERATING : Đến vùng giảm tốc tầng đích
+    DECELERATING --> LEVELING : Vào cữ định vị tầng
+    LEVELING --> DOOR_OPENING : Dừng tầng chính xác
+    DOOR_OPENING --> DOOR_OPENED : Cửa mở toang 100%
+    DOOR_OPENED --> DOOR_CLOSING : Hết thời gian chờ 1.8s / Bấm Đóng nhanh
+    DOOR_CLOSING --> STANDBY_CLOSED : Cửa đóng kín 0%
+    DOOR_CLOSING --> DOOR_OPENING : Kẹt cửa / Che rèm quang / Bấm Mở nhanh
+
+    state "VÙNG AN TOÀN TRỌNG YẾU (SAFETY FIRST)" as SAFETY {
+        STANDBY_CLOSED --> FAULT_LOCKOUT : Báo cháy / Quá tải / E-Stop
+        MOVING_CRUISE --> FAULT_LOCKOUT : Báo cháy / E-Stop
+        DOOR_OPENED --> FAULT_LOCKOUT : Quá tải (> 800kg)
+        FAULT_LOCKOUT --> FIRE_EVACUATION : Sự cố hỏa hoạn (Chạy về F1)
+    }
+```
+
+### 5.2. Thuật toán điều phối gom khách LOOK / SCAN hai chiều 7 tầng
+
+Được quản lý thông qua 3 mặt nạ bit 7-bit (`cabin_mask`, `hall_up_mask`, `hall_down_mask`):
 1. **Gom khách cùng chiều di chuyển:** Khi thang đang chạy LÊN, hệ thống ưu tiên dừng đón và trả tất cả hành khách có nhu cầu đi LÊN trên lộ trình mà không làm gián đoạn hành trình tổng thể.
 2. **Lướt qua tạm thời khách ngược chiều:** Nếu tại một tầng trung gian có người bấm gọi XUỐNG trong lúc cabin đang LÊN, thang máy **không dừng lại** nhằm bảo đảm thời gian di chuyển của khách trong cabin.
 3. **Tự động đảo chiều đón vét:** Khi cabin đã phục vụ hết hành khách ở các tầng phía trên, thang máy mới tự động đảo chiều sang XUỐNG và ghé đón lượt khách gọi xuống trên đường quay về.
 
-```
-       [ TẦNG 7 ] ─── Điểm quay đầu cao nhất
-           ▲
-           │  (Đang chạy LÊN: Đón khách lên, lướt qua khách gọi xuống)
-           │
-       [ TẦNG 4 ] ─── Khách bấm XUỐNG (Thang bỏ qua tạm thời, ghi nhận vào hall_down_mask)
-           ▲
-           │
-       [ TẦNG 3 ] ─── Khách bấm LÊN (Thang ghé đón cùng chiều)
-           ▲
-           │
-       [ TẦNG 1 ] ─── Điểm xuất phát
-```
+### 5.3. Bốn quy tắc an toàn bất biến (Safety Invariants)
 
-### 4.2. Bốn Quy tắc An toàn Bất biến (Safety Invariants)
 1. **Khóa liên động phần cứng (Hardware Interlock):** Hai ngõ ra mô-tơ `Y0 (PE5 - Lên)` và `Y1 (PE6 - Xuống)` tuyệt đối không bao giờ được phép dẫn đồng thời ở cả mức phần cứng lẫn phần mềm. Nếu phát hiện xung đột, trình điều khiển dập cả hai về mức `0` ngay tức thì.
-2. **Cửa chưa đóng kín (`door_pct > 0`) thì mô-tơ kéo bị khóa cứng tuyệt đối.**
+2. **Điều kiện chạy mô-tơ:** Cửa thang máy chưa đóng kín hoàn toàn (`door_pct > 0`) thì mô-tơ kéo bị khóa cứng tuyệt đối.
 3. **Lọc trễ Hysteresis chống chập chờn cảm biến:**
-   - **Quá tải:** Kích hoạt khi tải $\ge 800\text{ kg}$, chỉ giải trừ khi tải hạ xuống dưới $\le 750\text{ kg}$.
-   - **Báo cháy:** Kích hoạt khi nhiệt độ giếng thang $\ge 55^\circ\text{C}$, chỉ giải trừ khi nhiệt độ hạ xuống dưới $\le 48^\circ\text{C}$.
+   - Cảnh báo Quá tải: Kích hoạt khi tải $\ge 800\text{ kg}$, chỉ giải trừ khi tải hạ xuống dưới $\le 750\text{ kg}$.
+   - Cảnh báo Hỏa hoạn: Kích hoạt khi nhiệt độ giếng thang $\ge 55^\circ\text{C}$, chỉ giải trừ khi nhiệt độ hạ xuống dưới $\le 48^\circ\text{C}$.
 4. **Giám sát nhịp sống Đa luồng (Cooperative Watchdog):** Nếu có bất kỳ luồng RTOS nào bị treo quá `1500 ms`, mạch nạp Watchdog sẽ ngừng phục vụ, kích hoạt bộ đếm phần cứng `IWDG` (2.5 giây) thực hiện Hard Reset vi điều khiển.
 
 ---
 
-## 5. Giao diện Người - Máy (HMI Kép)
+## 6. Giao diện Người - Máy (HMI Kép)
 
-### 5.1. Màn hình màu TFT-LCD 240x320 qua Bus Song song FSMC 16-bit
+### 6.1. Màn hình màu TFT-LCD 240x320 qua Bus Song song FSMC 16-bit (ILI9341 50 FPS)
 
 Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341** giao tiếp qua **bus vi sai song song FSMC 16-bit** (`Bank 1 NE1`, lệnh tại `0x60000000`, dữ liệu tại `0x60100000`). Màn hình đạt tốc độ làm mới 50 FPS, chia thành 4 phân vùng Dashboard chuyên nghiệp:
 
@@ -232,7 +316,7 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 * **Hàng 7 Nút gọi Tầng Căn giữa Tuyệt đối:** Tọa độ $X_i = 18 + i \times 30\text{ px}$, tổng chiều rộng $204\text{ px}$, lề 2 bên đối xứng $18\text{ px}$. Nút nào đang chờ phục vụ sẽ sáng rực màu vàng (`RGB565_YELLOW`).
 * **Lớp phủ Sự cố Khẩn cấp (Emergency Overlays):** Tự động bật Popup **ĐỎ RỰC** khi Quá tải ($> 800\text{ kg}$) hoặc Báo cháy ($\ge 55^\circ\text{C}$), Popup **VÀNG CAM** khi Dừng khẩn cấp hoặc Kẹt cửa.
 
-### 5.2. Cụm 4 LED 7 đoạn Ngoài sảnh (74HC595 qua SPI1)
+### 6.2. Cụm 4 LED 7 đoạn Ngoài sảnh (74HC595 qua SPI1)
 
 | Trạng thái Thang máy | Ký tự 4 LED | Mô tả Hiệu ứng Chuyển động |
 | :--- | :---: | :--- |
@@ -244,7 +328,7 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 | **Báo cháy Khẩn cấp** | `F E 1` | Nhấp nháy chữ `FE` (Fire Evacuation) chỉ dẫn chạy sơ tán về Tầng 1. |
 | **Dừng Khẩn / Sự cố Lỗi** | `E r r` | Khóa cứng chữ `Err` cảnh báo cho kỹ thuật viên. |
 
-### 5.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1)
+### 6.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1)
 
 | Mã Phím | Vị trí Ma trận | Chức năng Điều khiển | Phản hồi Hệ thống |
 | :---: | :---: | :--- | :--- |
@@ -258,15 +342,15 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 
 ---
 
-## 6. Phần cứng Kit BKIT ARM4: Công tắc DIP Switch & 15 Ngoại vi
+## 7. Phần cứng Kit BKIT ARM4: Công tắc DIP Switch & 15 Ngoại vi
 
-### 6.1. Cấu hình Công tắc gạt (DIP Switch) trước khi cấp nguồn
+### 7.1. Cấu hình Công tắc gạt (DIP Switch) trước khi cấp nguồn
 * **`SW11 = ON`**: Kích hoạt đường kết nối mạch nạp ST-LINK trên bo mạch với vi điều khiển STM32F407.
 * **`SW13 = ON`**: Kết nối chân `PB8/PB9` của STM32 vào chip thu phát CAN `TJA1050`.
 * **`SW12 = OFF`**: Tách bus RS-485 để tránh xung đột chân UART.
 * **`SW2 = OFF`**: Ngắt cổng USB-C khỏi module ESP8266 khi chạy trực tiếp trên STM32.
 
-### 6.2. Bảng Ánh xạ 15 Ngoại vi Phần cứng (`app.overlay`)
+### 7.2. Bảng Ánh xạ 15 Ngoại vi Phần cứng (`app.overlay`)
 
 | STT | Ngoại vi Phần cứng | Giao tiếp / Chip | Chân STM32F407 | Vai trò Kỹ thuật trong Hệ thống |
 | :---: | :--- | :--- | :--- | :--- |
@@ -288,9 +372,11 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 
 ---
 
-## 7. Bảng Ticker 9 Kịch bản Kiểm thử & Demo Thực nghiệm trên Bo mạch
+## 8. Bảng Ticker 9 Kịch bản Kiểm thử & Demo Thực nghiệm trên Bo mạch
 
-### 7.1. Bảng Ticker Tổng hợp Kiểm thử Thực tế
+Tài liệu Word chi tiết: [Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.docx](../Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.docx).
+
+### 8.1. Bảng Ticker Tổng hợp Kiểm thử Thực tế (`[ ] KB-01` .. `[ ] KB-09`)
 
 | Ticker | Tên Kịch bản & Mục tiêu | Thao tác trên Phần cứng / Bàn phím | Hiện tượng Quan sát trên Bo mạch | Kết quả Đạt chuẩn |
 | :---: | :--- | :--- | :--- | :--- |
@@ -306,7 +392,7 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 
 ---
 
-### 7.2. Hướng dẫn Thao tác Thực tế Từng Kịch bản
+### 8.2. Hướng dẫn Thao tác Thực nghiệm Chi tiết Từng Kịch bản
 
 #### `[ ] KB-01`: Cấp nguồn & Tự kiểm tra hệ thống (Power-On Self-Test)
 1. Cắm nguồn USB-C hoặc bật nguồn cho bo mạch BKIT ARM4.
@@ -357,7 +443,7 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 
 ---
 
-## 8. Mô hình Mô phỏng HIL Digital Twin trên Máy tính (`pc_hil_twin/`)
+## 9. Mô hình Mô phỏng HIL Digital Twin trên Máy tính (`pc_hil_twin/`)
 
 Thư mục `smart_elevator_zephyr/pc_hil_twin/` cung cấp một ứng dụng mô phỏng thời gian thực hoàn chỉnh bằng Python Tkinter:
 
@@ -390,9 +476,9 @@ Thư mục `smart_elevator_zephyr/pc_hil_twin/` cung cấp một ứng dụng m�
 
 ---
 
-## 9. Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code
+## 10. Hướng dẫn Cài đặt Môi trường, Biên dịch & Nạp Code
 
-### 9.1. Biên dịch Firmware bằng Công cụ Ninja / West (PowerShell)
+### 10.1. Biên dịch Firmware bằng Công cụ Ninja / West (PowerShell)
 
 ```powershell
 # 1. Kích hoạt môi trường ảo Python của Zephyr
@@ -418,7 +504,7 @@ Memory region         Used Size  Region Size  %age Used
              RAM:       28608 B       128 KB     21.83%
 ```
 
-### 9.2. Khởi chạy Mô phỏng PC HIL Digital Twin
+### 10.2. Khởi chạy Mô phỏng PC HIL Digital Twin
 
 ```powershell
 # Chuyển vào thư mục pc_hil_twin
@@ -433,11 +519,11 @@ python elevator_twin.py
 
 ---
 
-## 10. Bảng Ticker Lệnh Shell Console (`bkit test` & `elev`) & Output Mẫu
+## 11. Bảng Ticker Lệnh Shell Console (`bkit test` & `elev`) & Output Mẫu
 
 Kết nối cáp chuyển đổi USB-to-UART vào chân `PA9 (TX)` và `PA10 (RX)` của bo mạch BKIT ARM4, mở phần mềm terminal (PuTTY / Tera Term / Serial Monitor) ở tham số truyền thông chuẩn **`115200 8N1`**.
 
-### 10.1. Bảng Ticker Kiểm tra Ngoại vi & Chẩn đoán Phần cứng (`bkit test ...`)
+### 11.1. Bảng Ticker Kiểm tra Ngoại vi & Chẩn đoán Phần cứng (`bkit test ...`)
 
 | Ticker | Cú pháp Lệnh | Tham số & Mặc định | Chân / Ngoại vi | Mục đích Kiểm thử & Hiện tượng trên Bo mạch | Kết quả Đạt chuẩn |
 | :---: | :--- | :--- | :--- | :--- | :--- |
@@ -455,7 +541,7 @@ Kết nối cáp chuyển đổi USB-to-UART vào chân `PA9 (TX)` và `PA10 (RX
 
 ---
 
-### 10.2. Bảng Ticker Điều khiển Vận hành & Tiêm lỗi HIL (`elev ...`)
+### 11.2. Bảng Ticker Điều khiển Vận hành & Tiêm lỗi HIL (`elev ...`)
 
 | Ticker | Cú pháp Lệnh | Tham số Khả dụng | Chức năng Vận hành / Tiêm lỗi HIL | Phản hồi Máy trạng thái FSM & Phần cứng | Kết quả Đạt chuẩn |
 | :---: | :--- | :--- | :--- | :--- | :--- |
@@ -470,7 +556,7 @@ Kết nối cáp chuyển đổi USB-to-UART vào chân `PA9 (TX)` và `PA10 (RX
 
 ---
 
-### 10.3. Trích xuất Đầu ra Mẫu Thực tế trên UART Terminal Console
+### 11.3. Trích xuất Đầu ra Mẫu Thực tế trên UART Terminal Console
 
 #### 1. Mẫu phản hồi khi gõ lệnh `elev status`:
 ```text
@@ -522,7 +608,7 @@ uart:~$ elev log
 
 ---
 
-## 11. Từ điển Tra cứu Nhanh: File nào chứa Hàm gì?
+## 12. Từ điển Tra cứu Nhanh: File nào chứa Hàm gì?
 
 * **`src/bsp/bsp_tft_lcd.c`** & **`include/bsp_tft_lcd.h`**:
   * `bsp_tft_lcd_init()`: Khởi tạo GPIO, thanh ghi FSMC 16-bit và chip ILI9341.
