@@ -1,256 +1,300 @@
-# Vận hành Hệ thống Thang máy Thông minh 7 Tầng
+# Vận hành Hệ thống Thang máy Thông minh 7 Tầng trên Zephyr RTOS & STM32F407
 
-Dự án điều khiển thang máy **7 tầng** chạy trên hệ điều hành thời gian thực **Zephyr RTOS v4.4.0** cho bo mạch **BKIT ARM4 (`STM32F407ZGT6`)**, kèm phần mềm mô phỏng & theo dõi trên máy tính **PC Digital Twin (`pc_hil_twin/`)**.
+Dự án điều khiển thang máy **7 tầng** an toàn trọng yếu (Safety-Critical & Hard Real-Time) chạy trên hệ điều hành thời gian thực **Zephyr RTOS v4.4.0** cho bo mạch **BKIT ARM4 (`STM32F407ZGT6`)**, tích hợp giao diện HMI kép (Cụm 4 LED 7 đoạn ngoài sảnh + Màn hình màu cảm ứng **TFT-LCD 240x320 qua bus song song FSMC 16-bit**) kèm phần mềm mô phỏng & giám sát thời gian thực **PC Digital Twin (`pc_hil_twin/`)**.
 
 ---
 
 ## Mục lục
 
-1. [Hiểu nhanh trong 30 giây: Chương trình này tổ chức như thế nào?](#1-hiểu-nhanh-trong-30-giây-chương-trình-này-tổ-chức-như-thế-nào)
+1. [Hiểu nhanh trong 30 giây: Cấu trúc thư mục & Module](#1-hiểu-nhanh-trong-30-giây-cấu-trúc-thư-mục--module)
 2. [Đọc từ điểm bắt đầu: Hàm `main()` làm những gì khi vừa bật điện?](#2-đọc-từ-điểm-bắt-đầu-hàm-main-làm-những-gì-khi-vừa-bật-điện)
-3. [Sau khi bật xong: 7 luồng chạy song song làm việc gì?](#3-sau-khi-bật-xong-7-luồng-chạy-song-song-làm-việc-gì)
-4. [Ví dụ thực tế: Lần dấu code khi thang máy hoạt động](#4-ví-dụ-thực-tế-lần-dấu-code-khi-thang-máy-hoạt-động)
-5. [Từ điển tra nhanh: File nào chứa hàm gì?](#5-từ-điển-tra-nhanh-file-nào-chứa-hàm-gì)
-6. [Thông tin phần cứng BKIT ARM4 & Giao thức CAN / EEPROM](#6-thông-tin-phần-cứng-bkit-arm4--giao-thức-can--eeprom)
-7. [Cách Build, Nạp code & Chạy giao diện PC Digital Twin](#7-cách-build-nạp-code--chạy-giao-diện-pc-digital-twin)
-8. [Các lệnh gõ thử qua cổng UART (`bkit` & `elev`)](#8-các-lệnh-gõ-thử-qua-cổng-uart-bkit--elev)
+3. [Sau khi bật xong: 7 luồng RTOS chạy song song làm việc gì?](#3-sau-khi-bật-xong-7-luồng-rtos-chạy-song-song-làm-việc-gì)
+4. [Nguyên lý điều phối LOOK/SCAN & Bốn quy tắc an toàn bất biến](#4-nguyên-lý-điều-phối-lookscan--bốn-quy-tắc-an-toàn-bất-biến)
+5. [Giao diện HMI Kép: Cụm 4 LED 7 đoạn & Màn hình màu TFT-LCD 240x320 (FSMC)](#5-giao-diện-hmi-kép-cụm-4-led-7-đoạn--màn-hình-màu-tft-lcd-240x320-fsmc)
+6. [Bảng tra cứu 16 phím bấm Ma trận phím 4x4 (`SPI1`)](#6-bảng-tra-cứu-16-phím-bấm-ma-trận-phím-4x4-spi1)
+7. [Kịch bản Demo thực nghiệm chi tiết từng bước trên Bo mạch](#7-kịch-bản-demo-thực-nghiệm-chi-tiết-từng-bước-trên-bo-mạch)
+8. [Từ điển tra nhanh: File nào chứa hàm gì?](#8-từ-điển-tra-nhanh-file-nào-chứa-hàm-gì)
+9. [Thông tin phần cứng BKIT ARM4, Công tắc gạt & Giao thức CAN / EEPROM](#9-thông-tin-phần-cứng-bkit-arm4-công-tắc-gạt--giao-thức-can--eeprom)
+10. [Cách Build, Nạp code & Chạy giao diện PC Digital Twin](#10-cách-build-nạp-code--chạy-giao-diện-pc-digital-twin)
+11. [Các lệnh gõ thử qua cổng UART Console (`bkit` & `elev`)](#11-các-lệnh-gõ-thử-qua-cổng-uart-console-bkit--elev)
 
 ---
 
-## 1. Hiểu nhanh trong 30 giây: Chương trình này tổ chức như thế nào?
+## 1. Hiểu nhanh trong 30 giây: Cấu trúc thư mục & Module
 
-Để không bị rối khi mở thư mục dự án, bạn chỉ cần nhớ cấu trúc chia đúng **4 ngăn** cực kỳ gọn gàng:
+Dự án được cấu trúc thành các ngăn độc lập theo tiêu chuẩn phân tầng hệ thống nhúng:
 
 ```text
 smart-elevator-zephyr-stm32/
-├── app.overlay & prj.conf        <-- Khai báo chân cắm trên kit STM32 & bật các tính năng Zephyr
-├── include/                      <-- Các file .h (chỉ chứa tên hàm & kiểu dữ liệu dùng chung)
+├── app.overlay & prj.conf        <-- Cấu hình chân vi điều khiển BKIT ARM4 & tham số Zephyr RTOS
+├── CMakeLists.txt                <-- Định nghĩa target nguồn biên dịch bằng CMake/Ninja
+├── include/                      <-- Header files: kiểu dữ liệu (elevator_types.h), API HSM, BSP, CAN, LCD
+│   ├── bsp_tft_lcd.h             <-- Trình điều khiển màn hình màu TFT-LCD 240x320 qua FSMC 16-bit
+│   ├── bsp_spi_hmi.h             <-- Trình điều khiển cụm LED 7 đoạn (74HC595) & bàn phím (74HC165)
+│   ├── elevator_hsm.h            <-- Máy trạng thái phân cấp an toàn 9 trạng thái
+│   └── elevator_scheduler.h      <-- Bộ lập lịch điều phối gom khách LOOK/SCAN 7 tầng
 ├── src/
-│   ├── main.c                    <-- ĐIỂM BẮT ĐẦU: khởi tạo mạch + tạo 7 luồng chạy song song
-│   ├── core/                     <-- BỘ NÃO: máy trạng thái HSM + thuật toán xếp lịch tầng LOOK
-│   ├── bsp/                      <-- TAY CHÂN PHẦN CỨNG: GPIO/EXTI, ADC, Còi, LED 7 đoạn/Phím, EEPROM/RTC, Watchdog
-│   ├── comms/                    <-- GIAO TIẾP RA NGOÀI: mạng CAN giữa 2 bo & gửi JSON lên PC
-│   └── cli/                      <-- NHẬN LỆNH TỪ BÀN PHÍM PC: lệnh gõ qua UART (`elev ...`, `bkit ...`)
-└── pc_hil_twin/                  <-- Phần mềm Python vẽ thang máy 7 tầng trên máy tính
+│   ├── main.c                    <-- ĐIỂM BẮT ĐẦU: Khởi tạo phần cứng + định nghĩa 7 luồng RTOS tĩnh
+│   ├── core/                     <-- BỘ NÃO: elevator_hsm.c (HSM Core) + elevator_scheduler.c (LOOK)
+│   ├── bsp/                      <-- DRIVER PHẦN CỨNG: GPIO/EXTI, ADC1, PWM, SPI1/2, I2C1, IWDG, TFT-LCD
+│   │   ├── bsp_tft_lcd.c         <-- Driver đồ họa ILI9341 FSMC 16-bit, cuộn số, dashboard 4 khối
+│   │   ├── bsp_spi_hmi.c         <-- Quét LED 7 đoạn (vạch cuộn), đọc 16 phím bàn phím ma trận
+│   │   ├── bsp_adc_sensors.c     <-- Đọc LM35 (nhiệt độ), VR1 (tải trọng), LDR (rèm quang), áp/dòng
+│   │   ├── bsp_gpio_exti.c       <-- Khóa liên động cứng Y0/Y1, ngắt khẩn cấp EXTI X0 (kẹt cửa)/X1 (E-Stop)
+│   │   ├── bsp_pwm_buzzer.c      <-- Điều khiển còi PWM PF8 không chặn (non-blocking)
+│   │   ├── bsp_i2c_storage.c     <-- Hộp đen AT24C512 EEPROM (32 slot CRC32) + RTC DS3231
+│   │   └── bsp_watchdog.c        <-- Giám sát điểm danh 4 luồng RTOS nạp phần cứng IWDG 2.5s
+│   ├── comms/                    <-- TRUYỀN THÔNG: can_bus.c (Mạng CAN 500kbps) + twin_telemetry.c ($TWIN JSON)
+│   └── cli/                      <-- DÒNG LỆNH SHELL: cli_elev.c (Lệnh thang máy) + cli_bkit_test.c (Tự test phần cứng)
+└── pc_hil_twin/                  <-- Phần mềm mô phỏng HIL Digital Twin bằng Python Tkinter trên máy tính
 ```
-
-**Mẹo đọc code nhanh nhất:**
-- Muốn biết **lúc mới bật điện mạch làm gì**, xem hàm `main()` ở cuối file `src/main.c`.
-- Muốn biết **thang máy xử lý lên/xuống/mở cửa/cháy/kẹt cửa ra sao**, xem `src/core/elevator_hsm.c` và `src/core/elevator_scheduler.c`.
-- Muốn biết **đọc cảm biến hay xuất tín hiệu ra chân STM32 nào**, tìm đúng tên phần cứng trong `src/bsp/`.
 
 ---
 
 ## 2. Đọc từ điểm bắt đầu: Hàm `main()` làm những gì khi vừa bật điện?
 
-Mở file **`src/main.c`** (kéo xuống dòng **457**, hàm `int main(void)`).  
-Khi vừa cấp nguồn, vi điều khiển chạy tuần tự **10 bước** từ trên xuống dưới:
+Mở file **`src/main.c`** (hàm `int main(void)`). Khi vừa cấp nguồn hoặc ấn nút Reset, chip `STM32F407ZGT6` chạy tuần tự **11 bước khởi tạo**:
 
-| Bước | Hàm được gọi trong `main()` | Nhảy tới file nào để xem code thật? | Ý nghĩa dễ hiểu |
+| Bước | Hàm được gọi trong `main()` | File nguồn tương ứng | Vai trò trong hệ thống |
 | :---: | :--- | :--- | :--- |
-| 1 | `bsp_watchdog_init()` | `src/bsp/bsp_watchdog.c` | Kiểm tra xem lần tắt trước có phải do bị treo máy không, rồi bật bộ đếm chống treo `IWDG` (`2.5 giây`). |
-| 2 | `bsp_gpio_exti_init(on_hw_exti_event)` | `src/bsp/bsp_gpio_exti.c` | Bật chân LED `PE4`, chân motor `PE5`/`PE6` (giữ tắt an toàn), chân ngõ vào `X0..X3` và gắn ngắt khẩn cho `X0` (kẹt cửa), `X1` (E-Stop). |
-| 3 | `bsp_pwm_buzzer_init()` | `src/bsp/bsp_pwm_buzzer.c` | Chuẩn bị còi báo động ở chân `PF8`. |
-| 4 | `bsp_adc_init()` | `src/bsp/bsp_adc_sensors.c` | Bật 5 kênh đo tương tự `ADC1` (cảm biến nhiệt `LM35`, biến trở tải trọng `VR1`, quang trở, điện áp, dòng điện). |
-| 5 | `bsp_spi_hmi_init()` | `src/bsp/bsp_spi_hmi.c` | Bật bus `SPI1` (cho LED 7 đoạn + bàn phím) và `SPI2` (cho chip Flash). |
-| 6 | `bsp_i2c_storage_init()` | `src/bsp/bsp_i2c_storage.c` | Bật bus `I2C1` để nói chuyện với đồng hồ `DS3231` và bộ nhớ hộp đen `AT24C512 EEPROM`. |
-| 7 | `elevator_hsm_init()` | `src/core/elevator_hsm.c` | Đặt thang máy đứng yên tại **Tầng 1, cửa đóng**, bật đồng hồ nhịp `100 ms` cho máy trạng thái. |
-| 8 | `can_bus_init(...)` | `src/comms/can_bus.c` | Bật mạng `CAN1` (`500 kbps`), mặc định ở chế độ tự kiểm tra `LOOPBACK` với vai trò `CABIN`. |
-| 9 | `bsp_wdt_was_reset_cause()` + `bsp_blackbox_append(...)` | `src/bsp/bsp_watchdog.c` + `src/bsp/bsp_i2c_storage.c` | Ghi 1 dòng nhật ký *"Mới bật nguồn"* (hoặc *"Vừa bị reset do treo"*) kèm giờ `DS3231` vào EEPROM. |
-| 10 | `k_timer_start(...)` + `bsp_pwm_buzzer_play_tone(...)` | `src/main.c` + `src/bsp/bsp_pwm_buzzer.c` | Bật 3 đồng hồ hẹn giờ định kỳ, kêu "bíp" báo khởi động xong rồi giao CPU cho **7 luồng RTOS** chạy. |
+| 1 | `bsp_watchdog_init()` | `src/bsp/bsp_watchdog.c` | Bật bộ đếm chống treo cứng `IWDG` (`2.5 giây`), kiểm tra mã cờ reset trước đó. |
+| 2 | `bsp_gpio_exti_init(...)` | `src/bsp/bsp_gpio_exti.c` | Cấu hình ngõ ra mô-tơ `Y0/Y1`, đèn `PE4`, và đăng ký ngắt cứng `EXTI` cho `X0` (kẹt cửa) và `X1` (E-Stop). |
+| 3 | `bsp_pwm_buzzer_init()` | `src/bsp/bsp_pwm_buzzer.c` | Khởi tạo xung PWM trên chân `PF8 (TIM13_CH1)` điều khiển còi báo. |
+| 4 | `bsp_adc_init()` | `src/bsp/bsp_adc_sensors.c` | Cấu hình 5 kênh đo tương tự `ADC1 12-bit` (`LM35`, `VR1`, quang trở `LDR`, áp `PB0`, dòng `PB1`). |
+| 5 | `bsp_spi_hmi_init()` | `src/bsp/bsp_spi_hmi.c` | Cấu hình bus `SPI1` dùng chung cho cụm LED 7 đoạn (`PG6`) và bàn phím 4x4 (`PD3`). |
+| 6 | `bsp_tft_lcd_init()` | `src/bsp/bsp_tft_lcd.c` | **Cấu hình bus song song FSMC 16-bit** (`Bank 1 NE1`), bật đèn nền `PA8` và gửi chuỗi lệnh khởi động cho chip `ILI9341`. |
+| 7 | `bsp_i2c_storage_init()` | `src/bsp/bsp_i2c_storage.c` | Khởi tạo bus `I2C1` kết nối đồng hồ `DS3231` và chip nhớ hộp đen `AT24C512 EEPROM`. |
+| 8 | `elevator_hsm_init()` | `src/core/elevator_hsm.c` | Đưa thang máy về trạng thái `IDLE_CLOSED` tại Tầng 1, bật timer nhịp `100 ms`. |
+| 9 | `can_bus_init(...)` | `src/comms/can_bus.c` | Khởi tạo mạng `bxCAN1 500 kbps` với bộ lọc phần cứng (chế độ `LOOPBACK` hoặc `NORMAL`). |
+| 10 | `bsp_blackbox_append(...)` | `src/bsp/bsp_i2c_storage.c` | Ghi 1 bản ghi bật nguồn (`BB_FAULT_BOOT_POR` hoặc `BB_FAULT_BOOT_WATCHDOG`) kèm giờ RTC vào EEPROM. |
+| 11 | `k_timer_start(...)` + `bsp_pwm_buzzer_play_tone(...)` | `src/main.c` | Kích hoạt 3 `k_timer` định kỳ, phát âm boot tone và nhường CPU cho **7 luồng RTOS**. |
 
 ---
 
-## 3. Sau khi bật xong: 7 luồng chạy song song làm việc gì?
+## 3. Sau khi bật xong: 7 luồng RTOS chạy song song làm việc gì?
 
-Ngay phía trên `main()` trong **`src/main.c`** (dòng **436–442**), chương trình tạo sẵn **7 luồng tĩnh** bằng `K_THREAD_DEFINE`. Số ưu tiên càng nhỏ thì quyền được chạy càng cao (khi có việc gấp sẽ chen ngang luồng ưu tiên thấp ngay lập tức):
+Chương trình tạo sẵn **7 luồng tĩnh** bằng macro `K_THREAD_DEFINE` trong `src/main.c`. Mức ưu tiên được phân bổ theo nguyên lý **Deadline Monotonic** (số càng nhỏ ưu tiên càng cao):
 
-| Tên luồng | Độ ưu tiên | Hàm gốc trong `src/main.c` | Công việc hằng ngày | Các file được luồng này gọi tới |
-| :--- | :---: | :--- | :--- | :--- |
-| **`t1_safety`** | **2** *(Cao nhất)* | `safety_thread_entry()` (`L105`) | Thức dậy mỗi `100 ms` (hoặc khi có ngắt `EXTI`) để đo nhiệt độ `LM35`, đo tải trọng `VR1` và đọc `X0..X3`. Thấy cháy (`≥ 55°C`) hoặc quá tải (`≥ 800 kg`) là báo ngay cho bộ não. | `bsp_watchdog.c`, `bsp_adc_sensors.c`, `bsp_gpio_exti.c`, `can_bus.c`, `elevator_hsm.c` |
-| **`t2_fsm`** | **3** | `fsm_thread_entry()` (`L189`) | **"Bộ não trung tâm"**: ngủ chờ thư gửi tới hòm thư `g_hsm_event_msgq`. Có lệnh gọi tầng hay báo lỗi là xử lý ngay và điều khiển đóng/mở motor. | `bsp_watchdog.c`, `elevator_hsm.c` → (`elevator_scheduler.c`, `bsp_gpio_exti.c`, `bsp_pwm_buzzer.c`, `bsp_i2c_storage.c`) |
-| **`t3_can_rx`** | **4** | `can_rx_thread_entry()` (`L212`) | Nghe và giải mã gói tin mạng `CAN` gửi tới (lệnh gọi tầng từ bo khác, tin báo cháy, trả lời gói hỏi `RTR`). | `can_bus.c` → (`elevator_hsm.c`) |
-| **`t3_can_tx`** | **4** | `can_tx_thread_entry()` (`L231`) | Cứ mỗi `250 ms` gửi trạng thái thang máy & nhịp tim `Heartbeat` lên mạng `CAN`; nếu bus lỗi `BUS-OFF` thì tự khôi phục. | `bsp_watchdog.c`, `elevator_hsm.c`, `can_bus.c` |
-| **`t3_can_wdt`** | **4** | `can_wdt_thread_entry()` (`L252`) | Canh chừng xem đối tác bên kia mạng `CAN` có còn gửi tin không; nếu mất liên lạc quá `2 giây` thì báo lỗi `FAIL_SAFE`. | `can_bus.c` → (`elevator_hsm.c`) |
-| **`t4_hmi`** | **5** | `hmi_thread_entry()` (`L283`) | Chạy mỗi `10 ms`: quét sáng 4 LED 7 đoạn (`UP`/`dn`/số tầng), tự tắt còi PWM khi hết giờ kêu, nháy LED `PE4` và quét 16 phím bấm mỗi `50 ms`. | `bsp_watchdog.c`, `elevator_hsm.c`, `can_bus.c`, `bsp_pwm_buzzer.c`, `bsp_spi_hmi.c`, `bsp_gpio_exti.c` |
-| **`t5_wdt`** | **8** *(Thấp nhất)* | `telemetry_wdt_thread_entry()` (`L413`) | Chạy mỗi `100 ms`: kiểm tra 4 luồng trên có luồng nào bị đơ không để nạp `IWDG`; đồng thời cứ `200 ms` gửi chuỗi `$TWIN` JSON lên máy tính nếu bật Digital Twin. | `bsp_watchdog.c`, `twin_telemetry.c` |
+| Luồng | Ưu tiên | Chu kỳ / Đánh thức | Nhiệm vụ chính | Các file được gọi |
+| :--- | :---: | :---: | :--- | :--- |
+| **`t1_safety`** | **2** *(Cao nhất)* | `100 ms` hoặc `EXTI` | Canh gác nhiệt độ `LM35`, tải trọng `VR1`, rèm quang và ngõ vào `X0..X3`. Phát hiện cháy (`≥ 55°C`) hoặc quá tải (`≥ 800 kg`) đẩy sự kiện khẩn vào HSM. | `bsp_adc_sensors.c`, `bsp_gpio_exti.c`, `can_bus.c`, `elevator_hsm.c` |
+| **`t2_fsm`** | **3** | Hướng sự kiện (`MsgQ`) | **Bộ não điều khiển trung tâm**: Chạy máy trạng thái HSM 9 trạng thái, tính toán chuyển tầng, khóa liên động motor và cửa. | `elevator_hsm.c`, `elevator_scheduler.c`, `bsp_gpio_exti.c`, `bsp_i2c_storage.c` |
+| **`t3_can_rx`** | **4** | Sự kiện khung đến | Nhận và giải mã khung mạng CAN từ bộ lọc phần cứng (gọi tầng `0x100`, báo cháy, trả lời `RTR`). | `can_bus.c`, `elevator_hsm.c` |
+| **`t3_can_tx`** | **4** | Chu kỳ `250 ms` | Phát định kỳ khung trạng thái `0x200` + Heartbeat `0x300` lên bus CAN; tự động phục hồi lỗi `BUS-OFF`. | `can_bus.c`, `elevator_hsm.c` |
+| **`t3_can_wdt`** | **4** | Chu kỳ `500 ms` | Giám sát mất kết nối đối tác CAN quá `2000 ms` để kích hoạt Fail-Safe. | `can_bus.c`, `elevator_hsm.c` |
+| **`t4_hmi`** | **5** | `10 ms` / `100 ms` | **Giao tiếp HMI Kép**: Quét 4 LED 7 đoạn (100 Hz), render Dashboard TFT-LCD 240x320 (10 Hz), quét bàn phím ma trận (50 ms), nháy LED `PE4`. | `bsp_spi_hmi.c`, `bsp_tft_lcd.c`, `bsp_pwm_buzzer.c`, `bsp_gpio_exti.c` |
+| **`t5_wdt`** | **8** *(Thấp nhất)* | `100 ms` / `200 ms` | Kiểm tra điểm danh 4 luồng trên để nạp `IWDG`; xuất chuỗi JSON `$TWIN` lên cổng nối tiếp máy tính. | `bsp_watchdog.c`, `twin_telemetry.c` |
 
-> **Để khỏi xung đột phần cứng khi nhiều luồng chạy cùng lúc**, code dùng khóa `k_mutex` (tự động nhường quyền nếu luồng ưu tiên cao đang chờ):
-> - `g_spi1_bus_mutex` (`bsp_spi_hmi.c`): tránh xuất LED 7 đoạn và đọc bàn phím đè nhau trên dây `SPI1`.
-> - `g_i2c1_bus_mutex` (`bsp_i2c_storage.c`): tránh đọc giờ `DS3231` và ghi EEPROM đụng nhau trên dây `I2C1`.
-> - `g_hsm_state_mutex` (`elevator_hsm.c`), `g_buzzer_mutex` (`bsp_pwm_buzzer.c`), `g_can_state_mutex` (`can_bus.c`).
-
----
-
-## 4. Ví dụ thực tế: Lần dấu code khi thang máy hoạt động
-
-Đây là cách nhanh nhất để hiểu toàn bộ code nối với nhau ra sao qua **3 tình huống thực tế**:
-
-### Tình huống 1: Bạn bấm phím gọi Tầng 5 trên bàn phím của bo mạch
-1. **Nhận phím bấm (`t4_hmi` trong `main.c`):** Cứ `50 ms`, luồng `t4_hmi` gọi `bsp_spi_keypad_scan()` (ở `bsp_spi_hmi.c`) để đọc phím. Thấy bạn nhấn phím tầng 5, nó tạo gói tin `EV_CALL_CABIN (floor = 5)` và bỏ vào hòm thư chung bằng `elevator_hsm_post_event()`.
-2. **Ghi nhận cuốc gọi (`t2_fsm` trong `elevator_hsm.c`):** Luồng `t2_fsm` tỉnh dậy, nhận gói tin trong `elevator_hsm_step()`, rồi gọi `elev_sched_add_request()` (ở `elevator_scheduler.c`) để bật bit số 4 của `cabin_mask`.
-3. **Chọn tầng đi tới (`elevator_hsm.c` ↔ `elevator_scheduler.c`):** Ở nhịp `100 ms` tiếp theo, hàm `handle_periodic_tick()` thấy thang đang đứng yên (`IDLE_CLOSED`) nên hỏi `elev_sched_pick_next_target()`. Thuật toán `LOOK` trả về *"Đi LÊN tới Tầng 5"*.
-4. **Kéo thang lên & dừng đón khách dọc đường:**
-   - `hsm_transition()` chuyển sang `HSM_STATE_MOVING_UP` rồi gọi `drive_interlocked_outputs()` → `bsp_gpio_set_motor_outputs(true, false)` (ở `bsp_gpio_exti.c`) để bật chân rơ-le `Y0 (PE5)` chạy lên. *(Hàm này khóa an toàn 2 lớp: nếu cửa chưa đóng `0%` hoặc `Y0` và `Y1` cùng đòi bật thì lập tức cắt sạch về `0`)*.
-   - Cứ mỗi `1500 ms` qua 1 tầng, nó hỏi `elev_sched_should_stop()` xem có ai dọc đường gọi cùng chiều không; tới Tầng 5 thì mở cửa (`700 ms`), kêu "bíp" (`bsp_pwm_buzzer_play_tone`), gọi `elev_sched_clear_floor()` để xóa bit Tầng 5, chờ khách `1800 ms` rồi đóng cửa lại.
-
-### Tình huống 2: Cửa đang đóng thì có vật cản chạm dây `X0 (PA6)` hoặc nhấn `E-Stop X1 (PA7)`
-1. **Ngắt phần cứng nổ tức thì (`bsp_gpio_exti.c`):** Dòng điện kích làm hàm ngắt `exti_x0_handler()` (hoặc `exti_x1_handler()`) chạy ngay lập tức → gọi `dispatch_debounced_exti()` để chụp bộ đếm xung nhịp CPU (`k_cycle_get_32()`) và chống rung `40 ms`.
-2. **Đẩy thẳng vào hòm thư (`main.c`):** Callback `on_hw_exti_event()` ném ngay sự kiện `EV_DOOR_OBSTRUCT_EXTI` (hoặc `EV_ESTOP_EXTI`) vào `elevator_hsm_post_event()` và đánh thức luồng `t1_safety`.
-3. **Phản ứng an toàn (`elevator_hsm.c`):** `elevator_hsm_step()` đón sự kiện:
-   - Gọi `record_exti_latency()` tính xem từ lúc ngắt phần cứng đến lúc phần mềm xử lý mất bao nhiêu **micro-giây** (`us`).
-   - Nếu là kẹt cửa khi đang đóng: đảo chiều mở cửa lại đúng từ phần trăm hiện tại và phát còi báo (`2800 Hz`). Nếu là `E-Stop`: lập tức cắt động cơ sang `HSM_STATE_FAIL_SAFE`.
-   - Cuối cùng gọi `bsp_blackbox_append()` (ở `bsp_i2c_storage.c`) lấy giờ từ `DS3231` và lưu sự cố vào `AT24C512 EEPROM`.
-
-### Tình huống 3: Cảm biến nhiệt `LM35` bị hơ nóng `≥ 55°C` (Báo cháy)
-1. Luồng ưu tiên cao `t1_safety` (ở `main.c`) chạy mỗi `100 ms`, gọi `bsp_adc_read_all()` (ở `bsp_adc_sensors.c`).
-2. Thấy `LM35 ≥ 55.0 °C` (`550`), nó đẩy `EV_OVERHEAT_TEMP` vào `elevator_hsm_post_event()` và bắn gói CAN khẩn cấp `0x080` qua `can_bus_send_emergency()`.
-3. `elevator_hsm_step()` chuyển sang `HSM_STATE_FIRE_EVAC`: gọi `elev_sched_reset()` xóa hết các cuốc gọi thường, hú còi báo cháy `3000 Hz`, ghi EEPROM, đóng cửa (nếu đang mở ở tầng trên) và ép chạy thẳng về **Tầng 1** mở cửa thoát hiểm. Nhờ lọc trễ **Hysteresis**, nhiệt độ phải nguội hẳn xuống `≤ 48.0 °C` (`480`) thì thang mới tự giải trừ báo cháy.
+> **Cơ chế chống xung đột tài nguyên:**
+> - `g_spi1_bus_mutex`: Khóa đồng bộ bảo vệ bus SPI1 giữa quét LED 7 đoạn (74HC595) và đọc bàn phím (74HC165).
+> - `g_i2c1_bus_mutex`: Khóa bảo vệ bus I2C1 giữa đọc RTC DS3231 và ghi nhật ký Hộp đen EEPROM AT24C512.
+> - Cả hai Mutex đều hỗ trợ **Priority Inheritance (Kế thừa độ ưu tiên)** chống đảo ngược ưu tiên (Priority Inversion).
 
 ---
 
-## 5. Từ điển tra nhanh: File nào chứa hàm gì?
+## 4. Nguyên lý điều phối LOOK/SCAN & Bốn quy tắc an toàn bất biến
 
-### Ngăn Core (`src/core/` — Logic điều khiển & Xếp lịch)
-- **`src/core/elevator_hsm.c`** — Máy trạng thái 9 trạng thái & Khóa an toàn tầng Core:
-  - `elevator_hsm_init()`: Khởi tạo về Tầng 1, `IDLE_CLOSED`, bật timer `100 ms`.
-  - `elevator_hsm_post_event()`: Cửa ngõ nhận mọi sự kiện (từ ngắt, cảm biến, phím, CAN, Shell) bỏ vào `g_hsm_event_msgq`.
-  - `elevator_hsm_step()`: Vòng lặp chính của luồng `t2_fsm` lấy sự kiện ra xử lý.
-  - `handle_periodic_tick()` *(static)*: Cập nhật đóng/mở cửa `700 ms`, giữ cửa `1800 ms`, chạy tầng `1500 ms`.
-  - `step_fire_evac_state()` *(static)*: Quy trình sơ tán cháy chạy thẳng về Tầng 1.
-  - `hsm_transition()` *(static)*: Chuyển trạng thái, đếm ma trận độ phủ `[9][9]`, kêu còi và bật/tắt motor.
-  - `drive_interlocked_outputs()` *(static)*: Cấm tuyệt đối chạy motor nếu cửa chưa đóng kín hoặc đang `E-Stop`.
-  - `record_exti_latency()` *(static)*: Tính độ trễ ngắt phần cứng ra micro-giây.
-  - `elevator_hsm_get_telemetry()`, `elevator_hsm_get_queue_stats()`, `elevator_hsm_get_visited_state_mask()`, `elevator_hsm_get_transition_counts()`, `elevator_state_str()`, `elevator_fault_str()`: Các hàm lấy số liệu cho HMI, CAN, Shell và `$TWIN`.
-- **`src/core/elevator_scheduler.c`** — Thuật toán `SCAN/LOOK` 7 tầng bằng 3 bitmask:
-  - `elev_sched_add_request()`: Bật bit ghi nhận nút gọi (Cabin / Sảnh Lên / Sảnh Xuống).
-  - `elev_sched_pick_next_target()`: Chọn tầng đích & hướng đi tiếp theo khi thang đang đỗ.
-  - `elev_sched_should_stop()`: Kiểm tra có cần dừng gom khách dọc đường khi đang chạy không.
-  - `elev_sched_clear_floor()` / `elev_sched_reset()`: Xóa bit tầng vừa phục vụ xong / xóa trắng toàn bộ khi báo cháy.
-  - *(Hàm phụ `static` bên trong: `floor_bit`, `merged_requests`, `has_request_above`, `has_request_below`, `pick_upward_target`, `pick_downward_target`).*
+### 4.1. Thuật toán điều phối LOOK / SCAN hai chiều (`src/core/elevator_scheduler.c`)
+Thuật toán quản lý bằng 3 mặt nạ bit 7-bit (`cabin_mask`, `hall_up_mask`, `hall_down_mask`):
+* **Gom khách cùng chiều:** Khi thang đang chạy LÊN, nó sẽ dừng đón tất cả hành khách có nhu cầu đi LÊN trên đường đi.
+* **Bỏ qua tạm thời khách ngược chiều:** Nếu ở tầng trung gian có người bấm gọi XUỐNG, thang đang lên sẽ **lướt qua không dừng** để bảo đảm thời gian di chuyển của khách trong cabin.
+* **Đảo chiều đón vét:** Khi thang lên đến tầng cao nhất của lượt quét và phía trên hết sạch yêu cầu, nó mới tự động đảo chiều chạy XUỐNG và ghé đón người khách gọi xuống lúc nãy.
 
-### Ngăn BSP (`src/bsp/` — Giao tiếp phần cứng trên kit BKIT ARM4)
-- **`src/bsp/bsp_gpio_exti.c`** — GPIO cách ly quang & Ngắt ngoài `PA6`/`PA7`:
-  - `bsp_gpio_exti_init()`: Cài đặt toàn bộ I/O và 2 chân ngắt.
-  - `exti_x0_handler()`, `exti_x1_handler()`, `dispatch_debounced_exti()` *(static)*: Xử lý sườn ngắt, chụp chu kỳ CPU và khử rung `40 ms`.
-  - `bsp_gpio_set_motor_outputs()`: **Khóa liên động lớp phần cứng**, chặn `Y0 (PE5)` và `Y1 (PE6)` bật cùng lúc.
-  - `bsp_gpio_set_led_debug()` / `bsp_gpio_read_inputs()`: Nháy LED `PE4` và đọc mức `X0..X3`.
-- **`src/bsp/bsp_adc_sensors.c`** — Đo 5 kênh tương tự `ADC1 12-bit`:
-  - `bsp_adc_init()`: Cấu hình 5 kênh từ `app.overlay`.
-  - `bsp_adc_read_all()`: Đọc raw → đổi sang mV → quy đổi ra nhiệt độ `LM35` (`0.1°C`), tải trọng `VR1` (`0..1000 kg`), ánh sáng, điện áp, dòng.
-- **`src/bsp/bsp_pwm_buzzer.c`** — Còi xung `PF8 (TIM13_CH1)` không làm đứng luồng:
-  - `bsp_pwm_buzzer_init()`, `bsp_pwm_buzzer_beep()`, `bsp_pwm_buzzer_play_tone()` (tra 5 âm chuẩn trong bảng `k_tone_table[]`), `bsp_pwm_buzzer_mute()`, `bsp_pwm_buzzer_tick()` (hết giờ tự ngắt).
-- **`src/bsp/bsp_spi_hmi.c`** — LED 7 đoạn & Phím trên `SPI1`, Flash ngoài trên `SPI2`:
-  - `bsp_spi_hmi_init()`, `bsp_spi_7seg_write_raw()`, `bsp_spi_7seg_render_status()` (vẽ `F-`, `UP`, `dn`, `FE`, `Err` + vạch cuộn + số tầng), `bsp_spi_keypad_scan()` (chốt `PD3` đọc 16 phím), `bsp_spi2_probe_jedec()` (đọc ID Flash `EF 40 17`).
-- **`src/bsp/bsp_i2c_storage.c`** — Đồng hồ `DS3231` & Hộp đen `AT24C512` trên `I2C1`:
-  - `bsp_i2c_storage_init()`, `bsp_i2c_scan_bus()`, `bsp_rtc_get_datetime()`, `bsp_rtc_set_datetime()` (giải mã/mã hóa BCD), `bsp_blackbox_append()` (ghi vòng 32 bản ghi kèm `CRC16` + header `CRC32`), `bsp_blackbox_read()`, `bsp_blackbox_clear()`.
-- **`src/bsp/bsp_watchdog.c`** — Chống treo phần cứng `IWDG` & Thông tin chip:
-  - `bsp_watchdog_init()`, `bsp_wdt_checkin()` (các luồng điểm danh), `bsp_wdt_service()` (chỉ nạp `wdt_feed` nếu không luồng nào treo quá `1500 ms`), `bsp_wdt_was_reset_cause()`, `bsp_wdt_get_hwinfo()`, `bsp_wdt_slot_name()`.
-
-### Ngăn Comms & CLI (`src/comms/`, `src/cli/`) & PC (`pc_hil_twin/`)
-- **`src/comms/can_bus.c`** — Mạng `CAN1 500 kbps` hỗ trợ 1 Kit (`LOOPBACK`) hoặc 2 Kit (`NORMAL`):
-  - `can_bus_init()`, `can_bus_set_mode()`, `can_bus_set_role()`: Khởi tạo đúng thứ tự driver CAN, gắn 3 bộ lọc phần cứng (`install_hw_filters`).
-  - `can_bus_rx_step()` & `dispatch_rx_frame()`: Nhận khung, tự trả lời gói hỏi từ xa `RTR`, đẩy lệnh gọi tầng/khẩn cấp vào HSM, đo RTT Ping/Pong.
-  - `can_bus_tx_and_recover_step()` & `can_bus_send_status()`: Gửi trạng thái `0x200` + Heartbeat `0x300` (Big-Endian) mỗi `250 ms` và phục hồi `BUS-OFF`.
-  - `can_bus_partner_watchdog_step()`: Giám sát mất đối tác quá `2000 ms` để kích `FAIL_SAFE`.
-  - `can_bus_send_hall_call()`, `can_bus_send_emergency()`, `can_bus_send_ping()`, `can_bus_request_cabin_rtr()`, `can_bus_set_hil_drop()`, `can_bus_get_diag()`, `can_bus_get_ext_stats()`, `can_bus_get_remote_cabin_view()`.
-- **`src/comms/twin_telemetry.c`** — Đóng gói JSON `$TWIN`:
-  - `twin_telemetry_set_enabled()`, `twin_telemetry_is_enabled()`, `twin_telemetry_emit_now()`.
-- **`src/cli/cli_elev.c` & `src/cli/cli_bkit_test.c`** — Xử lý các lệnh gõ ở cửa sổ terminal:
-  - Nhóm `elev`: `cmd_elev_status`, `cmd_elev_call`, `cmd_elev_door`, `cmd_elev_fault`, `cmd_elev_mode`, `cmd_elev_role`, `cmd_elev_twin`, `cmd_elev_log`, `cmd_elev_coverage`.
-  - Nhóm `bkit`: `cmd_bkit_test_gpio`, `cmd_bkit_test_pwm`, `cmd_bkit_test_adc`, `cmd_bkit_test_i2c`, `cmd_bkit_test_rtc_set`, `cmd_bkit_test_spi1`, `cmd_bkit_test_spi2`, `cmd_bkit_test_can`, `cmd_bkit_test_wdt_hang`, `cmd_bkit_stats`.
-- **`pc_hil_twin/`** — Chương trình Python chạy trên máy tính:
-  - Chạy từ `elevator_twin.py` (`main()`) → mở giao diện `twin_ui.py` + vẽ giếng thang `twin_canvas.py` + nối cổng COM `twin_serial.py` (hoặc chạy thử Offline không cần mạch qua `twin_simulator.py` & `twin_scheduler.py`).
+### 4.2. Bốn quy tắc an toàn bất biến (Safety Invariants)
+1. **Khóa liên động phần cứng (Hardware Interlock):** Ngõ ra `Y0 (PE5 - Lên)` và `Y1 (PE6 - Xuống)` không bao giờ được phép bật cùng lúc ở cả tầng driver lẫn tầng logic. Nếu có lỗi, hàm `bsp_gpio_set_motor_outputs` dập cả 2 về 0 ngay lập tức.
+2. **Cửa chưa đóng kín (door_pct > 0) thì mô-tơ cấm chạy.**
+3. **Lọc trễ Hysteresis chống chập chờn:**
+   * Quá tải: Bật khi tải $\ge 800\text{ kg}$, chỉ tắt khi tải giảm hẳn xuống $\le 750\text{ kg}$.
+   * Báo cháy: Bật khi nhiệt độ $\ge 55^\circ\text{C}$, chỉ giải trừ khi nhiệt độ hạ xuống $\le 48^\circ\text{C}$.
+4. **Giám sát nhịp sống Watchdog đa luồng:** Nếu có bất kỳ luồng RTOS nào bị treo quá `1500 ms`, bộ đếm `IWDG` phần cứng hết hạn sau `2.5 giây` sẽ tự kích hoạt Hardware Reset chip STM32.
 
 ---
 
-## 6. Thông tin phần cứng BKIT ARM4 & Giao thức CAN / EEPROM
+## 5. Giao diện HMI Kép: Cụm 4 LED 7 đoạn & Màn hình màu TFT-LCD 240x320 (FSMC)
 
-### Gạt công tắc DIP Switch trước khi cắm điện
+### 5.1. Bảng trạng thái Cụm 4 LED 7 đoạn (`SPI1`)
+| Trạng thái | Hiển thị | Mô tả hiệu ứng |
+| :--- | :---: | :--- |
+| **Đang đỗ tại Tầng N** | `F - N` | Ký tự 'F' ở LED 1, dấu gạch ngang ở LED 2, số tầng N ở LED 4. |
+| **Đang chạy LÊN Tầng N** | `U P N` | Chữ 'UP' ở 2 LED đầu. Ô LED thứ 3 có **vạch ngang cuộn từ đáy lên đỉnh** (`_` $\rightarrow$ `-` $\rightarrow$ `¯`). |
+| **Đang chạy XUỐNG Tầng N** | `d n N` | Chữ 'dn' ở 2 LED đầu. Ô LED thứ 3 có **vạch ngang cuộn từ đỉnh xuống đáy** (`¯` $\rightarrow$ `-` $\rightarrow$ `_`). |
+| **Cửa đang mở** | `O P N` | Chữ 'OP' (Open) kèm số tầng N. |
+| **Sự cố Quá tải** | `F U L L` | Nhấp nháy 4 chữ 'FULL' dồn dập + còi kêu liên tục. |
+| **Sự cố Báo cháy** | `F E 1` | Nhấp nháy chữ 'FE' (Fire Evacuation) + còi hú hồi dài. |
+| **Dừng khẩn / Lỗi** | `E r r` | Khóa cứng chữ 'Err' hoặc 'STOP'. |
 
-| Công tắc | Gạt về | Tác dụng |
-| :---: | :---: | :--- |
-| **SW11** | **ON** | Kết nối mạch nạp & debug ST-LINK với STM32F407 |
-| **SW13** | **ON** | Kết nối chân `PB8/PB9` ra chip CAN `TJA1050` |
-| **SW12** | **OFF** | Ngắt mạch RS485 để tránh nhiễu/đụng bus |
-| **SW2** | **OFF** | Ngắt cổng USB-C khỏi ESP8266 khi chạy STM32 |
+### 5.2. Màn hình màu TFT-LCD 240x320 (Giao tiếp FSMC 16-bit)
+* **Khối 1 - Top Bar (0 - 28 px):** Tiêu đề `BKIT ELEVATOR`, Đồng hồ RTC DS3231 (`HH:MM:SS`), Trạng thái mạng `[CAN:OK]`.
+* **Khối 2 - Hero Section (30 - 155 px):** Mũi tên chỉ hướng `▲ UP` / `▼ DOWN` / `— IDLE`; Số tầng lớn $24 \times 32\text{ px}$ có **hiệu ứng cuộn trượt dọc** (Vertical Rolling Animation 40-50 FPS); Hàng 7 nút gọi tầng căn giữa hoàn hảo ($204\text{ px}$, lề 2 bên $18\text{ px}$, nút nào được gọi sáng rực màu vàng).
+* **Khối 3 - Cửa & Rèm quang (160 - 225 px):** Thanh tiến trình đóng/mở cửa $0\% - 100\%$, đèn báo cảm biến rèm quang `Light Curtain: CLEAR / BEAM BLOCKED`.
+* **Khối 4 - Cảm biến & Hộp đen (230 - 315 px):** Thanh đo tải trọng (VR1), Nhiệt độ giếng thang (LM35), dòng nhật ký Hộp đen EEPROM mới nhất.
+* **Màn hình Khẩn cấp (Emergency Overlays):** Tự động bật Popup **ĐỎ RỰC** khi Quá tải (> 800 kg) hoặc Báo cháy ($\ge 55^\circ\text{C}$), Popup **VÀNG CAM** khi Dừng khẩn cấp.
 
-### Bảng chân linh kiện chính (`app.overlay`)
+---
 
-| Khối chức năng | Ngoại vi | Chân STM32F407 | Ghi chú |
+## 6. Bảng tra cứu 16 phím bấm Ma trận phím 4x4 (`SPI1`)
+
+| Mã Phím | Tọa độ | Chức năng điều khiển | Hành vi hệ thống |
+| :---: | :---: | :--- | :--- |
+| **Phím 0..6** | Hàng 0, Cột 0 $\rightarrow$ Hàng 1, Cột 2 | **Gọi Tầng 1..7 (Cabin)** | Còi chíp ngắn, ô số trên LCD sáng rực màu vàng, thang chạy đến đón. |
+| **Phím 7** | Hàng 1, Cột 3 | **Mở cửa nhanh (Door Open)** | Cửa đang đóng dở lập tức mở ngược ra 100%. |
+| **Phím 8** | Hàng 2, Cột 0 | **Đóng cửa nhanh (Door Close)** | Rút ngắn thời gian chờ, cửa lập tức khép lại 0%. |
+| **Phím 9** | Hàng 2, Cột 1 | **Test Kẹt cửa (Opto X0)** | Bơm sự cố vật cản: cửa mở lại, LCD báo Vàng Cam. |
+| **Phím 10** | Hàng 2, Cột 2 | **Test Báo cháy (62°C)** | Bơm sự cố quá nhiệt: Còi hú, LCD đỏ rực, thang lao thẳng về Tầng 1 mở toang cửa sơ tán. |
+| **Phím 11** | Hàng 2, Cột 3 | **Dừng Khẩn Cấp (E-Stop)** | Cắt nguồn mô-tơ tức thời (< 12 µs), LED hiện Err, LCD báo khóa hệ thống. |
+| **Phím 12..15** | Toàn bộ Hàng 3 | **Xóa lỗi / Reset hệ thống** | Giải trừ trạng thái sự cố, đưa thang máy về hoạt động bình thường. |
+
+---
+
+## 7. Kịch bản Demo thực nghiệm chi tiết từng bước trên Bo mạch
+
+### Kịch bản 1: Cấp nguồn & Tự kiểm tra hệ thống (Power-On Self-Test)
+1. Bấm nút đen **RESET (RST)** trên bo mạch BKIT ARM4.
+2. Còi Buzzer phát 1 hồi chuông "Bính... Boong" chào mừng.
+3. LED Heartbeat `PE4` nháy đều nhịp $800\text{ ms}$. Cụm LED 7 đoạn hiện `F - 1`.
+4. Màn hình TFT-LCD hiển thị Dashboard ban đầu: Đồng hồ RTC đang nhảy giây, số tầng lớn `[ 1 ]`, ô số 1 có viền xanh lá, rèm quang `CLEAR (SAFE)`.
+
+### Kịch bản 2: Gọi tầng đơn lẻ & Hiệu ứng chuyển tầng mượt
+1. Bấm **Phím 3** trên bàn phím (Gọi lên **Tầng 4**).
+2. Ô số **[4]** trên LCD sáng vàng, dòng target hiện `Target Floor: 4`. Đèn LED `Y0` trên bo mạch bật sáng (mô-tơ chạy LÊN).
+3. LED 7 đoạn chuyển `UP 1` $\rightarrow$ `UP 2` $\rightarrow$ `UP 3` $\rightarrow$ `UP 4` kèm vạch cuộn động. Màn hình LCD cuộn số trượt dọc từ 1 lên 4.
+4. Đến Tầng 4: Đèn LED `Y0` tắt, còi reo reo báo đến nơi, LED 7 đoạn hiện `OP 4`, thanh cửa mở toang $100\%$, ô [4] tắt màu vàng. Sau $1.8\text{ s}$, cửa tự đóng lại.
+
+### Kịch bản 3: Gom khách thông minh khi bấm nhiều tầng cùng lúc (Thuật toán LOOK/SCAN)
+1. Thang đang ở Tầng 1. Bạn bấm liên tiếp: **Phím 2** (Tầng 3), **Phím 5** (Tầng 6). Trong lúc thang đang chạy từ F1 lên F3, bạn bấm tiếp **Phím 3** (Tầng 4) và **Phím 0** (Tầng 1 - nằm phía sau lưng).
+2. LCD sáng vàng đồng loạt các ô: **`[1]`**, **`[3]`**, **`[4]`**, **`[6]`**.
+3. **Diễn biến:**
+   * Thang ghé dừng ở **Tầng 3**: Mở cửa đón khách, ô [3] tắt đèn vàng.
+   * Thang chạy tiếp lên và ghé dừng ở **Tầng 4**: Mở cửa đón khách, ô [4] tắt đèn vàng.
+   * Thang **KHÔNG BAO GIỜ quay đầu về Tầng 1 giữa chừng**! Nó tiếp tục chạy lên và ghé dừng ở **Tầng 6** (trả khách tầng đỉnh, ô [6] tắt vàng).
+   * Khi đến Tầng 6, phía trên hết yêu cầu $\rightarrow$ Thang tự động **đảo chiều sang ▼ DOWN**, đèn LED `Y1` bật sáng, kéo một mạch chạy thẳng xuống **Tầng 1** đón khách!
+
+### Kịch bản 4: Thử nghiệm Nút Đóng / Mở cửa nhanh (Phím 7 & Phím 8)
+* Khi cửa đang đóng dở ở Tầng 4: Bấm **Phím 7** $\rightarrow$ Cửa lập tức đảo chiều mở toang ra $100\%$.
+* Khi cửa đang mở đón khách: Bấm **Phím 8** $\rightarrow$ Cắt ngắn thời gian chờ $1.8\text{ s}$, cửa khép lại ngay tức thì.
+
+### Kịch bản 5: Thử nghiệm Cảm biến Rèm quang Chống kẹp cửa (Light Curtain)
+* Bấm gọi tầng bất kỳ. Trong lúc cửa đang khép lại (`DOOR: MOVING`):
+  * Lấy ngón tay **che kín cảm biến ánh sáng LDR (chân PC0)** trên mặt bo mạch (hoặc bấm **Phím 9**).
+* **Kết quả:** Cửa đang khép lập tức **dừng lại và mở ngược ra $100\%$**; màn hình LCD hiện thanh cảnh báo màu VÀNG CAM `DOOR: OBSTACLE! RE-OPENING`.
+
+### Kịch bản 6: Thử nghiệm Cảm biến Quá tải Cabin (Biến trở VR1)
+* Dùng tay vặn núm xoay biến trở **VR1 (chân PC1)** theo chiều kim đồng hồ lên mức cao ($> 80\%$, tức $> 800\text{ kg}$).
+* **Kết quả:** Còi kêu bíp bíp liên tục, LED 7 đoạn nhấp nháy chữ **`FULL`**, LCD bật Popup **ĐỎ RỰC** `!! OVERLOAD DETECTED !!`, khóa cứng mô-tơ không cho chạy. Vặn VR1 về $< 750\text{ kg}$ hệ thống khôi phục bình thường.
+
+### Kịch bản 7: Thử nghiệm Báo cháy Khẩn cấp & Sơ tán về Tầng 1 (LM35)
+* Bấm **Phím 10** trên bàn phím (hoặc hơ nóng cảm biến nhiệt LM35 chân PC2 vượt $55^\circ\text{C}$).
+* **Kết quả:** Còi hú liên tục hồi dài, LED Debug PE4 nháy dồn dập $200\text{ ms}$, LED 7 đoạn hiện `FE 1`, LCD đổi sang giao diện **ĐỎ RỰC TOÀN MÀN HÌNH**, thang hủy toàn bộ lệnh khác tự động chạy thẳng xuống **Tầng 1** mở toang cửa sơ tán. Bấm **Phím 12** để xóa lỗi.
+
+### Kịch bản 8: Phanh gấp Dừng khẩn cấp (Emergency Stop)
+* Khi thang đang chạy, bấm **Phím 11** (hoặc kích hoạt opto X1 PA7).
+* **Kết quả:** Mô-tơ bị cắt nguồn ngay lập tức (dưới $12\ \mu\text{s}$), LED hiện `Err`, LCD hiện Popup dừng khẩn cấp. Bấm **Phím 12** để khôi phục.
+
+---
+
+## 8. Từ điển tra nhanh: File nào chứa hàm gì?
+
+* **`src/bsp/bsp_tft_lcd.c`** & **`include/bsp_tft_lcd.h`**:
+  * `bsp_tft_lcd_init()`: Khởi tạo GPIO, thanh ghi FSMC 16-bit và chip ILI9341.
+  * `bsp_tft_lcd_fill_rect()`, `bsp_tft_lcd_draw_string()`, `bsp_tft_lcd_draw_big_digit()`, `bsp_tft_lcd_draw_progress_bar()`: Các hàm vẽ 2D cơ bản.
+  * `bsp_tft_lcd_render_dashboard()`: Render giao diện HMI 4 khối và các popup sự cố.
+  * `bsp_tft_lcd_animate_floor_rolling()`: Hiệu ứng hoạt họa cuộn trượt số tầng dọc.
+* **`src/core/elevator_scheduler.c`**:
+  * `elev_sched_add_request()` / `elev_sched_clear_floor()` / `elev_sched_reset()`: Quản lý hàng đợi bitmask.
+  * `elev_sched_pick_next_target()` / `elev_sched_should_stop()`: Thuật toán LOOK hai chiều gom khách.
+* **`src/core/elevator_hsm.c`**:
+  * `elevator_hsm_step()`: Máy trạng thái hữu hạn 9 trạng thái.
+  * `drive_interlocked_outputs()`: Khóa an toàn 2 lớp mô-tơ và cửa.
+* **`src/bsp/bsp_spi_hmi.c`**:
+  * `bsp_spi_7seg_render_status()`: Xuất mã 7 đoạn kèm vạch cuộn động lên 4 LED.
+  * `bsp_spi_keypad_scan()`: Quét 16 phím bàn phím ma trận qua SPI1.
+* **`src/bsp/bsp_i2c_storage.c`**:
+  * `bsp_blackbox_append()` / `bsp_blackbox_read()`: Ghi/đọc 32 bản ghi hộp đen có CRC32 trên EEPROM AT24C512.
+  * `bsp_rtc_get_datetime()` / `bsp_rtc_set_datetime()`: Đọc/cài đặt ngày giờ RTC DS3231.
+* **`src/bsp/bsp_watchdog.c`**:
+  * `bsp_wdt_checkin()` / `bsp_wdt_service()`: Quản lý điểm danh 4 luồng nạp IWDG.
+
+---
+
+## 9. Thông tin phần cứng BKIT ARM4, Công tắc gạt & Giao thức CAN / EEPROM
+
+### Vị trí công tắc gạt DIP Switch trước khi cắm điện:
+* **SW11 = ON**: Kết nối mạch nạp & debug ST-LINK với chip STM32F407.
+* **SW13 = ON**: Kết nối chân `PB8/PB9` vào chip thu phát CAN `TJA1050`.
+* **SW12 = OFF**: Ngắt cổng RS485 tránh xung đột bus.
+* **SW2 = OFF**: Ngắt USB-C khỏi ESP8266 khi chạy STM32.
+
+### Bảng chân phần cứng chi tiết (`app.overlay`):
+| Khối chức năng | Ngoại vi | Chân STM32F407 | Chức năng phần cứng |
 | :--- | :--- | :--- | :--- |
-| Giao tiếp PC / Shell | `USART1` | `PA9` (TX), `PA10` (RX) | Cổng RS232 (`115200 8N1`) |
-| LED3 & Motor Lên/Xuống | `GPIO Out` | `PE4` (LED3), `PE5` (Y0 UP), `PE6` (Y1 DOWN) | Có khóa liên động chống bật `Y0` và `Y1` cùng lúc |
-| Ngõ vào cách ly & Ngắt | `GPIO / EXTI` | `PA6` (X0 kẹt cửa), `PA7` (X1 E-Stop), `PC4` (X2), `PC5` (X3 quá tải) | Kéo lên nội, `X0`/`X1` chạy ngắt phần cứng |
-| Còi báo | `TIM13_CH1` | `PF8` | Phát PWM 50% duty |
-| Cảm biến tương tự | `ADC1` 12-bit | `PC2` (`LM35`), `PC1` (`VR1`), `PC0` (Quang trở), `PB0` (Áp), `PB1` (Dòng) | Quy đổi `10 mV/°C` (`LM35`) và `0..1000 kg` (`VR1`) |
-| 4 LED 7 đoạn + 16 Phím | `SPI1` | `PB3/PB4/PB5`, `PG6` (`LD_LATCH`), `PD3` (`BTN_LOAD`) | `2x74HC595` (LED 7 đoạn) dùng chung bus với `2x74HC165` (Phím) |
-| Flash ngoài | `SPI2` | `PB13/PB14/PB15`, `PB12` (`CS`) | Chip `W25Q64FV` (`EF 40 17`) |
-| Đồng hồ & Hộp đen | `I2C1` | `PB6` (SCL), `PB7` (SDA) | `DS3231` (`0x68`) + `AT24C512` (`0x50`) |
-| Mạng CAN 500 kbps | `bxCAN1` | `PB8` (RX), `PB9` (TX) | Filter HW: `0x080` (Khẩn cấp), `0x100..0x10F` (Gọi tầng), `0x200..0x3FF` (Status/HB/Ping) |
-
-- **Bộ nhớ Hộp đen AT24C512:** Header nằm ở trang `0x0000` (`magic = "ELEV"`, kiểm tra `CRC32-IEEE`); nối tiếp từ `0x0080` lưu tối đa **32 bản ghi** theo kiểu vòng tròn (mỗi slot `32 B` chứa struct `elevator_blackbox_rec_t` `22 B` kèm `CRC16-CCITT` và thời gian từ `DS3231`).
+| **Giao tiếp PC Console** | `USART1` | `PA9` (TX), `PA10` (RX) | Cổng RS232 (`115200 8N1`) |
+| **LED Debug & Motor** | `GPIO Out` | `PE4` (LED Debug), `PE5` (Y0 Lên), `PE6` (Y1 Xuống) | Khóa liên động cứng chống bật đồng thời |
+| **Ngõ vào cách ly quang** | `GPIO / EXTI` | `PA6` (X0 Kẹt cửa), `PA7` (X1 E-Stop), `PC4` (X2), `PC5` (X3) | Kéo lên nội, `X0`/`X1` chạy ngắt ngoài EXTI |
+| **Còi báo âm thanh** | `TIM13_CH1` | `PF8` | Phát xung PWM 50% duty |
+| **Cảm biến tương tự** | `ADC1 12-bit` | `PC2` (LM35), `PC1` (VR1), `PC0` (Quang trở LDR), `PB0` (Áp), `PB1` (Dòng) | Đo nhiệt độ, tải trọng, rèm quang an toàn |
+| **4 LED 7 đoạn & Bàn phím** | `SPI1` | `PB3` (SCK), `PB4` (MISO), `PB5` (MOSI), `PG6` (Latch), `PD3` (Load) | 2x 74HC595 (LED) + 2x 74HC165 (Phím) |
+| **Màn hình màu TFT-LCD** | `FSMC 16-bit` | `PD0/1/4/5/7/8..10/14/15`, `PE3` (RS), `PE7..15`, `PC13` (Reset), `PA8` (Đèn nền) | Driver ILI9341 bộ nhớ Bank 1 NE1 |
+| **Hộp đen & Đồng hồ RTC** | `I2C1` | `PB6` (SCL), `PB7` (SDA) | `DS3231` (`0x68`) + `AT24C512` (`0x50`) |
+| **Mạng CAN 500 kbps** | `bxCAN1` | `PB8` (RX), `PB9` (TX) | Bộ lọc phần cứng: `0x080`, `0x100..0x10F`, `0x200..0x3FF` |
 
 ---
 
-## 7. Cách Build, Nạp code & Chạy giao diện PC Digital Twin
+## 10. Cách Build, Nạp code & Chạy giao diện PC Digital Twin
 
-### A. Biên dịch & Nạp xuống mạch STM32 (Windows PowerShell)
+### A. Biên dịch & Nạp code xuống bo mạch (Windows PowerShell)
 
 ```powershell
-# Chạy từ thư mục gốc của repo (nơi chứa CMakeLists.txt & app.overlay)
-$env:ZEPHYR_BASE = "C:\Users\ASUS\zephyrproject\zephyr"
+# Kích hoạt môi trường ảo Zephyr
+& C:\Users\ASUS\zephyrproject\.venv\Scripts\Activate.ps1
 
-# Biên dịch toàn bộ firmware
-C:\Users\ASUS\zephyrproject\.venv\Scripts\west.exe build -p always -b stm32f4_disco .
+# Chuyển vào thư mục dự án
+cd C:\Users\ASUS\Documents\Report\BTL_HeThongNhung\smart_elevator_zephyr
 
-# Nạp code qua ST-LINK (nhớ gạt SW11 = ON)
-C:\Users\ASUS\zephyrproject\.venv\Scripts\west.exe flash
+# Biên dịch toàn bộ firmware bằng Ninja
+ninja -C build
+
+# Hoặc dùng west build
+west build -b stm32f4_disco .
+
+# Nạp firmware xuống bo mạch qua ST-LINK (nhớ gạt SW11 = ON)
+west flash
 ```
 
-> Lần sau sửa code muốn build nhanh hơn, có thể bỏ `-p always` (`west build -b stm32f4_disco .`).
-
-### B. Mở giao diện mô phỏng & theo dõi trên máy tính (`pc_hil_twin/`)
+### B. Mở giao diện mô phỏng Digital Twin trên máy tính (`pc_hil_twin/`)
 
 ```powershell
-# Chỉ cần cài pyserial nếu cắm cáp RS232 nối với mạch thật (chế độ Offline không cần)
-pip install pyserial
-
-# Chạy giao diện mô phỏng 7 tầng
+# Chạy giao diện đồ họa Python Digital Twin
 python pc_hil_twin\elevator_twin.py
 ```
-
-- **Chưa cắm mạch:** Bấm **▶ Khởi động Offline Sim** để thử chạy mô phỏng ngay trên máy tính.
-- **Đã cắm mạch qua RS232 (`115200 8N1`):** Chọn đúng cổng `COMx` → bấm **Kết nối RS232** → bật `elev twin on` để giếng thang trên PC tự đồng bộ theo mạch thật mỗi `200 ms`.
+* **Chưa cắm mạch:** Nhấn **▶ Khởi động Offline Sim** để thử nghiệm ngay trên máy tính.
+* **Đã cắm cáp RS232 vào mạch:** Chọn cổng `COMx` tương ứng ở tốc độ `115200` $\rightarrow$ Nhấn **Kết nối RS232** $\rightarrow$ Thang máy ảo trên máy tính sẽ đồng bộ trực tiếp theo bo mạch thật thời gian thực.
 
 ---
 
-## 8. Các lệnh gõ thử qua cổng UART (`bkit` & `elev`)
+## 11. Các lệnh gõ thử qua cổng UART Console (`bkit` & `elev`)
 
-Mở terminal nối cổng COM ở tốc độ **`115200 8N1`** sẽ thấy dấu nhắc `bkit-elev:~$ `:
+Mở terminal kết nối cổng COM ở tốc độ **`115200 8N1`** sẽ thấy dấu nhắc lệnh:
 
-### Lệnh kiểm tra từng bộ phận phần cứng (`bkit`)
-- `bkit test gpio`: Nháy đèn `PE4`, thử motor `Y0/Y1`, in trạng thái `X0..X3`.
-- `bkit test pwm [freq]`: Kêu còi `PF8` thử trong `250 ms` (mặc định `2400 Hz`).
-- `bkit test adc`: In giá trị nhiệt độ `LM35`, tải trọng `VR1`, ánh sáng, áp, dòng.
-- `bkit test i2c`: Quét xem có thấy `0x50` (EEPROM) và `0x68` (RTC) không và đọc giờ hiện tại.
-- `bkit test rtc_set <Năm> <Tháng> <Ngày> <Giờ> <Phút> <Giây>`: Chỉnh lại giờ cho chip `DS3231`.
-- `bkit test spi1 [hex]`: Thử xuất LED 7 đoạn và đọc thử 1 lần phím đang nhấn (`0..15`).
-- `bkit test spi2`: Đọc mã ID chip Flash `W25Q64FV` (ra `EF 40 17` là đạt).
-- `bkit test can [rtr]`: Bắn thử gói CAN `PING` (`0x380`) hoặc hỏi từ xa `RTR` (`0x200`) và xem thời gian phản hồi `RTT us`.
-- `bkit test wdt_hang`: Cố tình ngừng nạp Watchdog để mạch tự reset sau `~2.5 giây` và lưu sự kiện `BOOT_WDT`.
-- `bkit stats`: Xem lý do reset, mã chip UID 96-bit và lượng RAM stack còn dư của cả 7 luồng.
+### Lệnh kiểm tra từng bộ phận phần cứng (`bkit test ...`)
+* `bkit test lcd`: **Chạy bài kiểm tra Màn hình màu TFT-LCD 240x320** (vẽ 4 thanh màu RGB565 và kiểm tra phần cứng FSMC).
+* `bkit test gpio`: Thử bật/tắt motor Y0/Y1, nháy đèn PE4 và đọc 4 ngõ vào quang X0..X3.
+* `bkit test pwm [freq]`: Phát thử còi PF8 trong $250\text{ ms}$ (mặc định $2400\text{ Hz}$).
+* `bkit test adc`: In giá trị đo tức thời của 5 kênh ADC1 (nhiệt độ LM35, tải trọng VR1, quang trở, áp, dòng).
+* `bkit test i2c`: Quét bus I2C1 tìm chip EEPROM (`0x50`) và RTC (`0x68`), đọc ngày giờ hiện tại.
+* `bkit test rtc_set <Năm> <Tháng> <Ngày> <Giờ> <Phút> <Giây>`: Cài đặt lại ngày giờ thực cho chip DS3231.
+* `bkit test spi1 [hex]`: Thử xuất LED 7 đoạn và đọc 16 phím bàn phím ma trận.
+* `bkit test spi2`: Đọc mã JEDEC ID chip Flash ngoài W25Q64FV (`EF 40 17`).
+* `bkit test can [rtr]`: Bắn gói CAN PING (`0x380`) hoặc hỏi từ xa RTR (`0x200`) đo độ trễ RTT.
+* `bkit test wdt_hang`: Cố tình dừng nạp Watchdog để kiểm chứng MCU tự reset sau đúng $2.5\text{ giây}$.
+* `bkit stats`: In nguyên nhân reset (HWINFO), UID chip và mức chiếm dụng Stack của toàn bộ 7 luồng.
 
-### Lệnh điều khiển thang máy & thử lỗi (`elev`)
-- `elev status`: In toàn bộ trạng thái thang, tầng hiện tại/đích, hàng đợi gọi tầng, ngõ vào `X0..X3`, `ADC`, độ trễ ngắt và thống kê `CAN`.
-- `elev call <1..7> [cabin|up|down]`: Bấm gọi tầng (ví dụ: `elev call 5 cabin`, `elev call 3 up`).
-- `elev door <open|close|obstruct>`: Mở/đóng cửa hoặc giả lập kẹt cửa `X0`.
-- `elev fault <fire|overload|can_drop|estop|clear>`: Bơm thử sự cố (cháy, quá tải, đứt dây CAN `2 giây`, `E-Stop`) hoặc `clear` để xóa chốt lỗi.
-- `elev mode <loopback|normal>`: Chọn tự test trên 1 bo (`loopback`) hay nối dây 2 bo (`normal`).
-- `elev role <cabin|hall>`: Chọn bo làm tủ chính (`cabin`) hay bảng gọi ngoài sảnh (`hall`).
-- `elev twin <on|off>`: Bật/tắt gửi dữ liệu `$TWIN` cho giao diện Python.
-- `elev log [read|clear]`: Đọc nhật ký hộp đen trong EEPROM (tối đa 16 bản ghi mới nhất) hoặc xóa trắng.
-- `elev coverage`: Xem thang máy đã chạy qua đủ `9/9` trạng thái chưa.
+### Lệnh điều khiển thang máy & tiêm lỗi thử nghiệm (`elev ...`)
+* `elev status`: In toàn bộ trạng thái FSM, tầng hiện tại, tải trọng, nhiệt độ, các cờ lỗi.
+* `elev call <1..7> [cabin|up|down]`: Bấm gọi tầng (Ví dụ: `elev call 5 cabin`, `elev call 3 up`, `elev call 4 down`).
+* `elev door <open|close|obstruct>`: Mở/đóng cửa hoặc giả lập kẹt cửa rèm quang X0.
+* `elev fault <fire|overload|can_drop|estop|clear>`: Bơm thử sự cố (cháy, quá tải, đứt mạng CAN, E-Stop) hoặc xóa chốt lỗi.
+* `elev log [read|clear]`: Đọc 32 bản ghi Hộp đen trong EEPROM AT24C512 hoặc xóa trắng.
+* `elev coverage`: In ma trận đếm số lần chuyển trạng thái $[9][9]$ để kiểm tra độ phủ kiểm thử V-Model.
 
 ---
 
@@ -258,6 +302,7 @@ Mở terminal nối cổng COM ở tốc độ **`115200 8N1`** sẽ thấy dấ
 
 ```text
 Memory region         Used Size  Region Size  %age Used
-           FLASH:      104112 B         1 MB      9.93%
+           FLASH:      112272 B         1 MB     10.71%
              RAM:       28608 B       128 KB     21.83%
 ```
+*(Firmware tối ưu hóa cực kỳ gọn gàng, Flash chỉ chiếm 10.7% và RAM chiếm 21.8% dung lượng chip STM32F407ZGT6).*
