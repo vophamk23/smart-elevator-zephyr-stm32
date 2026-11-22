@@ -1,4 +1,4 @@
-# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY THÔNG MINH 7 TẦNG AN TOÀN TRỌNG YẾU THỜI GIAN THỰC TRÊN NỀN TẢNG ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
+# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY 7 TẦNG AN TOÀN THỜI GIAN THỰC TRÊN NỀN TẢNG ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
 
 <p align="center">
   <img src="https://img.shields.io/badge/RTOS-Zephyr%20RTOS%20v4.4.0-007ACC?style=for-the-badge&logo=zephyrproject&logoColor=white" alt="Zephyr RTOS"/>
