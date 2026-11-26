@@ -257,29 +257,13 @@ static int cmd_bkit_test_lcd(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 
 	shell_print(sh, "Testing ILI9341 FSMC 16-bit TFT-LCD (240x320)...");
-	int err = bsp_tft_lcd_init();
+	int err = bsp_tft_lcd_run_self_test(1800U);
 	if (err < 0) {
-		shell_error(sh, "LCD init failed (%d)", err);
+		shell_error(sh, "LCD self-test failed (%d)", err);
 		return err;
 	}
 
-	/* Vẽ các thanh màu kiểm tra RGB565 */
-	bsp_tft_lcd_fill_rect(10, 25, 220, 25, LCD_COLOR_RED);
-	bsp_tft_lcd_fill_rect(10, 55, 220, 25, LCD_COLOR_GREEN);
-	bsp_tft_lcd_fill_rect(10, 85, 220, 25, LCD_COLOR_CYAN);
-	bsp_tft_lcd_fill_rect(10, 115, 220, 25, LCD_COLOR_YELLOW);
-
-	bsp_tft_lcd_draw_string(20, 33, "TEST: RED COLOR OK", LCD_COLOR_WHITE, LCD_COLOR_RED);
-	bsp_tft_lcd_draw_string(20, 63, "TEST: GREEN COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_GREEN);
-	bsp_tft_lcd_draw_string(20, 93, "TEST: CYAN COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_CYAN);
-	bsp_tft_lcd_draw_string(20, 123, "TEST: YELLOW COLOR OK", LCD_COLOR_BLACK, LCD_COLOR_YELLOW);
-
-	bsp_tft_lcd_draw_big_digit(108, 160, '7', LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-	bsp_tft_lcd_draw_string(50, 210, "BKIT TFT-LCD: PASS", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
-
-	shell_print(sh, "TFT-LCD self-test passed: holding test bars for 1500 ms...");
-	k_msleep(1500);
-	bsp_tft_lcd_invalidate();
+	shell_print(sh, "TFT-LCD self-test PASS (holding color bars for 1800 ms, then auto-restoring Dashboard)!");
 	return 0;
 }
 

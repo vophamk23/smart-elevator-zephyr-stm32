@@ -474,6 +474,11 @@ int main(void)
 		(void)bsp_blackbox_append(BB_FAULT_BOOT_POR, HSM_STATE_IDLE_CLOSED, 1U, 0);
 	}
 
+	/* Làm mới mốc điểm danh cho cả 4 khe luồng sau khi khởi tạo xong LCD & EEPROM lúc boot */
+	for (int i = 0; i < (int)WDT_MON_COUNT; i++) {
+		bsp_wdt_checkin((wdt_mon_id_t)i);
+	}
+
 	/* Chạy giám sát an toàn mỗi 50 ms (< 50 ms đáp ứng rèm quang), HMI mỗi 10 ms và WDT/$TWIN mỗi 100 ms */
 	k_timer_start(&g_safety_timer, K_MSEC(50), K_MSEC(50));
 	k_timer_start(&g_hmi_timer, K_MSEC(10), K_MSEC(10));

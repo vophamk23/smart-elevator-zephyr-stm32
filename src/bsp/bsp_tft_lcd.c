@@ -45,12 +45,15 @@ typedef enum {
 } lcd_ui_mode_t;
 
 static bool g_lcd_ready;
+static K_MUTEX_DEFINE(g_lcd_bus_mutex);
 static lcd_ui_mode_t g_ui_mode = LCD_UI_NONE;
 static bool g_hdr_drawn;
 static uint8_t g_prev_floor = 0xFFU;
 static uint8_t g_prev_call_mask = 0xFFU;
 static uint8_t g_prev_queue_floor = 0xFFU;
 static uint32_t g_last_render_uptime;
+static uint32_t g_lcd_test_hold_until_ms;
+static bool g_lcd_need_post_test_clear;
 
 /* Bộ đệm đồng hồ thực DS3231 đọc mỗi 1000 ms (tự động dự phòng bằng uptime nếu không gắn DS3231) */
 static uint32_t g_last_rtc_poll_ms;
@@ -660,6 +663,37 @@ void bsp_tft_lcd_animate_floor_rolling(uint8_t old_floor, uint8_t new_floor, ele
 	}
 }
 
+int bsp_tft_lcd_run_self_test(uint32_t hold_ms)
+{
+	k_mutex_lock(&g_lcd_bus_mutex, K_FOREVER);
+	if (!g_lcd_ready) {
+		int err = bsp_tft_lcd_init();
+		if (err < 0) {
+			k_mutex_unlock(&g_lcd_bus_mutex);
+			return err;
+		}
+	}
+
+	g_lcd_test_hold_until_ms = k_uptime_get_32() + hold_ms;
+	g_lcd_need_post_test_clear = true;
+
+	bsp_tft_lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, LCD_COLOR_NAVY);
+	bsp_tft_lcd_fill_rect(10, 20, 220, 26, LCD_COLOR_RED);
+	bsp_tft_lcd_fill_rect(10, 52, 220, 26, LCD_COLOR_GREEN);
+	bsp_tft_lcd_fill_rect(10, 84, 220, 26, LCD_COLOR_CYAN);
+	bsp_tft_lcd_fill_rect(10, 116, 220, 26, LCD_COLOR_YELLOW);
+
+	bsp_tft_lcd_draw_string(20, 29, "TEST: RED COLOR BAR OK", LCD_COLOR_WHITE, LCD_COLOR_RED);
+	bsp_tft_lcd_draw_string(20, 61, "TEST: GREEN COLOR BAR OK", LCD_COLOR_BLACK, LCD_COLOR_GREEN);
+	bsp_tft_lcd_draw_string(20, 93, "TEST: CYAN COLOR BAR OK", LCD_COLOR_BLACK, LCD_COLOR_CYAN);
+	bsp_tft_lcd_draw_string(20, 125, "TEST: YELLOW COLOR BAR OK", LCD_COLOR_BLACK, LCD_COLOR_YELLOW);
+
+	bsp_tft_lcd_draw_big_digit(108, 165, '7', LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+	bsp_tft_lcd_draw_string(36, 225, "BKIT TFT-LCD FSMC 16B: PASS", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
+	k_mutex_unlock(&g_lcd_bus_mutex);
+	return 0;
+}
+
 void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 				  uint8_t call_mask,
 				  uint8_t door_pct,
@@ -670,6 +704,18 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 {
 	if (!g_lcd_ready || tel == NULL) {
 		return;
+	}
+
+	uint32_t now_chk = k_uptime_get_32();
+	if ((int32_t)(g_lcd_test_hold_until_ms - now_chk) > 0) {
+		return;
+	}
+
+	k_mutex_lock(&g_lcd_bus_mutex, K_FOREVER);
+	if (g_lcd_need_post_test_clear) {
+		g_lcd_need_post_test_clear = false;
+		bsp_tft_lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, LCD_COLOR_NAVY);
+		bsp_tft_lcd_invalidate();
 	}
 
 	/* Xác định chế độ màn hình ưu tiên an toàn: E-Stop > Báo cháy > Quá tải > Bình thường */
@@ -687,6 +733,7 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 
 	if (!mode_changed && (now - g_last_render_uptime < 80U) &&
 	    tel->current_floor == g_prev_floor && call_mask == g_prev_call_mask) {
+		k_mutex_unlock(&g_lcd_bus_mutex);
 		return;
 	}
 	g_last_render_uptime = now;
@@ -750,6 +797,7 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 
 		lcd_draw_string_padded(20, 264, "REDUCE LOAD <= 750 kg TO CLEAR", 32,
 				       LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
+		k_mutex_unlock(&g_lcd_bus_mutex);
 		return;
 	}
 
@@ -770,6 +818,7 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 					   LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
 		lcd_draw_string_padded(20, 272, "PRESS KEY [E] / CLEAR WHEN SAFE", 32,
 				       LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
+		k_mutex_unlock(&g_lcd_bus_mutex);
 		return;
 	}
 
@@ -787,6 +836,7 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 
 		lcd_draw_string_padded(20, 264, "STATUS: FAIL_SAFE INTERLOCKED", 32,
 				       LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
+		k_mutex_unlock(&g_lcd_bus_mutex);
 		return;
 	}
 
@@ -868,4 +918,5 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 			 (last_log_msg != NULL && last_log_msg[0] != '\0') ? last_log_msg : "IDLE_CLOSED");
 		lcd_draw_string_padded(20, 290, buf, 28, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
 	}
+	k_mutex_unlock(&g_lcd_bus_mutex);
 }

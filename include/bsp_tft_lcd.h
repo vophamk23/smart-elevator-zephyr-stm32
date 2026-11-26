@@ -82,6 +82,12 @@ void bsp_tft_lcd_clear(uint16_t color);
  */
 void bsp_tft_lcd_invalidate(void);
 
+/**
+ * @brief Chạy bài kiểm tra dải màu RGB565 an toàn đa luồng và giữ hiển thị trong @p hold_ms mili-giây,
+ *        sau đó tự động khôi phục lại toàn bộ Dashboard thang máy không để lại vệt màu cũ.
+ */
+int bsp_tft_lcd_run_self_test(uint32_t hold_ms);
+
 /* --- Các hàm vẽ nguyên thủy (Graphics Primitives) --- */
 void bsp_tft_lcd_draw_pixel(int x, int y, uint16_t color);
 void bsp_tft_lcd_fill_rect(int x, int y, int w, int h, uint16_t color);
