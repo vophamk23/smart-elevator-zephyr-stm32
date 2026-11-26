@@ -4,31 +4,22 @@
  *        Hệ thống Thang máy Thông minh BKIT ARM4 (STM32F407ZGT6).
  *
  * Chức năng tổng quát của file:
- *  - Cấu hình phần cứng FSMC 16-bit (Bank 1 NOR/PSRAM 1) trên STM32F407ZGT6 nối chip ILI9341.
- *  - Cung cấp các hàm vẽ đồ họa 2D cơ bản (điểm, khối chữ nhật, chuỗi ký tự ASCII, số lớn, thanh tiến trình).
- *  - Quản lý giao diện HMI hiển thị thông tin buồng thang 240x320 pixel trực quan thời gian thực.
- *  - Thực hiện hiệu ứng hoạt họa cuộn số tầng dọc (Vertical Rolling Animation) mượt mà 30-50 FPS.
- *
- * Các hàm quan trọng nhất trong file:
- *  - `bsp_tft_lcd_init()`               : Cấu hình GPIO Port A/C/D/E, thanh ghi FSMC BCR1/BTR1 và gửi chuỗi lệnh khởi động ILI9341.
- *  - `bsp_tft_lcd_clear()`              : Xóa sạch màn hình theo màu sắc tùy chọn.
- *  - `bsp_tft_lcd_fill_rect()`          : Tô màu khối chữ nhật qua giao tiếp nạp vùng cửa sổ FSMC.
- *  - `bsp_tft_lcd_draw_string()`        : Vẽ chuỗi ký tự theo font ASCII 6x8 tối ưu không tràn viền.
- *  - `bsp_tft_lcd_draw_big_digit()`     : Vẽ chữ số lớn 24x32 pixel phục vụ hiển thị số tầng trung tâm.
- *  - `bsp_tft_lcd_draw_progress_bar()`  : Vẽ thanh tiến trình đóng/mở cửa và cân tải trọng kèm viền phân cách.
- *  - `bsp_tft_lcd_render_dashboard()`   : Render toàn diện 4 khối giao diện (Header, Số tầng/Hàng đợi, Cửa/Rèm quang, Cảm biến/Hộp đen) và các popup sự cố (Quá tải, Báo cháy, E-Stop).
- *  - `bsp_tft_lcd_animate_floor_rolling()` : Hoạt họa cuộn trượt số tầng dọc khi cabin di chuyển qua các tầng.
- *
- * Sơ đồ chân phần cứng (Mục 5.3 QuickStartGuide BKIT ARM4):
- *  - Data Bus 16-bit: PD14(D0), PD15(D1), PD0(D2), PD1(D3), PE7..PE15(D4..D12), PD8..PD10(D13..D15)
- *  - Điều khiển: RS=PE3 (FSMC_A19), CS=PD7 (FSMC_NE1), WR=PD5 (FSMC_NWE), RD=PD4 (FSMC_NOE)
- *  - Tín hiệu phụ: RESET=PC13, BLK=PA8 (Đèn nền)
+ *  - Cấu hình phần cứng FSMC 16-bit (Bank 1 NOR/PSRAM 1) trên STM32F407ZGT6 nối chip ILI9341,
+ *    đồng thời kéo cao chân `PG10 (FSMC_NE3)` để cô lập chip SRAM ngoài `IS61LV51216` tránh xung đột bus D0..D15.
+ *  - Quản lý máy trạng thái khung hình (`lcd_ui_mode_t`) đảm bảo xóa sạch nền khi chuyển đổi giữa
+ *    Dashboard 4 khối và các màn hình khẩn cấp (Overload / Fire Alarm / E-Stop / Self-Test), không bao giờ đè chữ.
+ *  - Chỉ vẽ lại các phần tử thay đổi (Dirty-Region Rendering), đệm khoảng trắng cố định chống sót ký tự đuôi,
+ *    xóa sạch viền ngoài `CALL QUEUE` theo cả hai chiều Lên/Xuống, vẽ mũi tên đồ họa sắc nét và đồng bộ giờ DS3231 RTC.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "bsp_tft_lcd.h"
+#include "bsp_i2c_storage.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
@@ -36,22 +27,38 @@
 
 LOG_MODULE_REGISTER(bsp_lcd, LOG_LEVEL_INF);
 
-/* 
- * Ánh xạ bộ nhớ FSMC Bank 1 (NOR/PSRAM 1)
- * RS kết nối PE3 (FSMC_A19):
- *  - Trong chế độ 16-bit bus, đường địa chỉ ngoài A19 tương ứng với bit địa chỉ trong Cortex-M là bit 20.
- *  - Địa chỉ ghi Lệnh (RS = 0): 0x60000000
- *  - Địa chỉ ghi Dữ liệu (RS = 1): 0x60000000 | (1 << 20) = 0x60100000
+/*
+ * Ánh xạ bộ nhớ FSMC Bank 1 (NOR/PSRAM 1):
+ *  - RS nối chân PE3 (FSMC_A19) -> dịch 1 bit ở chế độ 16-bit bus tương ứng bit 20 địa chỉ AHB.
+ *  - Ghi Lệnh (RS = 0): 0x60000000
+ *  - Ghi Dữ liệu (RS = 1): 0x60100000
  */
 #define LCD_CMD_ADDR    (*((volatile uint16_t *)0x60000000U))
 #define LCD_DATA_ADDR   (*((volatile uint16_t *)0x60100000U))
 
-static bool g_lcd_ready = false;
-static uint8_t g_last_rendered_floor = 0xFFU;
-static uint32_t g_last_render_uptime = 0U;
+typedef enum {
+	LCD_UI_NONE = 0,
+	LCD_UI_NORMAL,
+	LCD_UI_OVERLOAD,
+	LCD_UI_FIRE,
+	LCD_UI_ESTOP,
+} lcd_ui_mode_t;
+
+static bool g_lcd_ready;
+static lcd_ui_mode_t g_ui_mode = LCD_UI_NONE;
+static bool g_hdr_drawn;
+static uint8_t g_prev_floor = 0xFFU;
+static uint8_t g_prev_call_mask = 0xFFU;
+static uint8_t g_prev_queue_floor = 0xFFU;
+static uint32_t g_last_render_uptime;
+
+/* Bộ đệm đồng hồ thực DS3231 đọc mỗi 1000 ms (tự động dự phòng bằng uptime nếu không gắn DS3231) */
+static uint32_t g_last_rtc_poll_ms;
+static bool g_rtc_valid;
+static uint8_t g_rtc_h, g_rtc_m, g_rtc_s;
 
 /* ============================================================================
- * BẢNG FONT CHỮ ASCII 6x8 (Tối ưu hiển thị nhãn, thông số trên màn hình 240x320)
+ * BẢNG FONT CHỮ ASCII 6x8 (0x20..0x7A)
  * ============================================================================ */
 static const uint8_t font_6x8[][6] = {
 	[' ' - ' '] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
@@ -118,6 +125,7 @@ static const uint8_t font_6x8[][6] = {
 	[']' - ' '] = { 0x00, 0x41, 0x41, 0x7F, 0x00, 0x00 },
 	['^' - ' '] = { 0x04, 0x02, 0x01, 0x02, 0x04, 0x00 },
 	['_' - ' '] = { 0x40, 0x40, 0x40, 0x40, 0x40, 0x00 },
+	['`' - ' '] = { 0x00, 0x01, 0x02, 0x04, 0x00, 0x00 },
 	['a' - ' '] = { 0x20, 0x54, 0x54, 0x54, 0x78, 0x00 },
 	['b' - ' '] = { 0x7F, 0x48, 0x44, 0x44, 0x38, 0x00 },
 	['c' - ' '] = { 0x38, 0x44, 0x44, 0x44, 0x20, 0x00 },
@@ -144,87 +152,105 @@ static const uint8_t font_6x8[][6] = {
 	['x' - ' '] = { 0x44, 0x28, 0x10, 0x28, 0x44, 0x00 },
 	['y' - ' '] = { 0x0C, 0x50, 0x50, 0x50, 0x3C, 0x00 },
 	['z' - ' '] = { 0x44, 0x64, 0x54, 0x4C, 0x44, 0x00 },
+	['{' - ' '] = { 0x00, 0x08, 0x36, 0x41, 0x00, 0x00 },
+	['|' - ' '] = { 0x00, 0x00, 0x7F, 0x00, 0x00, 0x00 },
+	['}' - ' '] = { 0x00, 0x41, 0x36, 0x08, 0x00, 0x00 },
+	['~' - ' '] = { 0x08, 0x04, 0x08, 0x10, 0x08, 0x00 },
 };
 
-/* Ghi lệnh tới ILI9341 */
 static inline void lcd_write_cmd(uint16_t cmd)
 {
 	LCD_CMD_ADDR = cmd;
 }
 
-/* Ghi dữ liệu tới ILI9341 */
 static inline void lcd_write_data(uint16_t data)
 {
 	LCD_DATA_ADDR = data;
 }
 
-/**
- * @brief Thiết lập cửa sổ vẽ (Active Window) trên ILI9341
- */
 static void lcd_set_window(int x0, int y0, int x1, int y1)
 {
-	if (x0 < 0) x0 = 0;
-	if (y0 < 0) y0 = 0;
-	if (x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
-	if (y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1;
+	if (x0 < 0) {
+		x0 = 0;
+	}
+	if (y0 < 0) {
+		y0 = 0;
+	}
+	if (x1 >= LCD_WIDTH) {
+		x1 = LCD_WIDTH - 1;
+	}
+	if (y1 >= LCD_HEIGHT) {
+		y1 = LCD_HEIGHT - 1;
+	}
 
-	lcd_write_cmd(0x2AU); /* Column Address Set */
+	lcd_write_cmd(0x2AU);
 	lcd_write_data((uint16_t)((x0 >> 8) & 0xFFU));
 	lcd_write_data((uint16_t)(x0 & 0xFFU));
 	lcd_write_data((uint16_t)((x1 >> 8) & 0xFFU));
 	lcd_write_data((uint16_t)(x1 & 0xFFU));
 
-	lcd_write_cmd(0x2BU); /* Page Address Set */
+	lcd_write_cmd(0x2BU);
 	lcd_write_data((uint16_t)((y0 >> 8) & 0xFFU));
 	lcd_write_data((uint16_t)(y0 & 0xFFU));
 	lcd_write_data((uint16_t)((y1 >> 8) & 0xFFU));
 	lcd_write_data((uint16_t)(y1 & 0xFFU));
 
-	lcd_write_cmd(0x2CU); /* Memory Write */
+	lcd_write_cmd(0x2CU);
 }
 
-/**
- * @brief Khởi tạo phần cứng FSMC 16-bit và gửi tập lệnh chuẩn cho ILI9341
- */
+void bsp_tft_lcd_invalidate(void)
+{
+	g_ui_mode = LCD_UI_NONE;
+	g_hdr_drawn = false;
+	g_prev_floor = 0xFFU;
+	g_prev_call_mask = 0xFFU;
+	g_prev_queue_floor = 0xFFU;
+}
+
 int bsp_tft_lcd_init(void)
 {
 #if defined(CONFIG_SOC_SERIES_STM32F4X)
-	/* 1. Bật clock cấp cho các GPIO Port A, C, D, E và bộ nhớ FSMC */
+	/* 1. Bật clock GPIO A, C, D, E, G và bộ điều khiển FSMC */
 	RCC->AHB1ENR |= (RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOCEN |
-			 RCC_AHB1ENR_GPIODEN | RCC_AHB1ENR_GPIOEEN);
+			 RCC_AHB1ENR_GPIODEN | RCC_AHB1ENR_GPIOEEN |
+			 RCC_AHB1ENR_GPIOGEN);
 	RCC->AHB3ENR |= RCC_AHB3ENR_FSMCEN;
+
+	/*
+	 * Cô lập chip SRAM ngoài IS61LV51216 (dùng chung bus FSMC_D0..D15) bằng cách
+	 * cấu hình chân chọn chip PG10 (FSMC_NE3) làm GPIO Output kéo lên mức CAO (1 = Deselect).
+	 */
+	GPIOG->MODER &= ~(3U << (10 * 2));
+	GPIOG->MODER |= (1U << (10 * 2));
+	GPIOG->ODR |= (1U << 10);
 
 	/* 2. Cấu hình chân Đèn nền PA8 (GPIO Output Push-pull) */
 	GPIOA->MODER &= ~(3U << (8 * 2));
 	GPIOA->MODER |= (1U << (8 * 2));
-	GPIOA->ODR |= (1U << 8); /* Bật sáng đèn nền */
+	GPIOA->ODR |= (1U << 8);
 
-	/* 3. Cấu hình chân RESET PC13 */
+	/* 3. Cấu hình và tạo xung Reset cứng trên chân PC13 */
 	GPIOC->MODER &= ~(3U << (13 * 2));
 	GPIOC->MODER |= (1U << (13 * 2));
 	GPIOC->ODR |= (1U << 13);
 	k_busy_wait(10000U);
-	GPIOC->ODR &= ~(1U << 13); /* Kéo Reset thấp */
+	GPIOC->ODR &= ~(1U << 13);
 	k_busy_wait(20000U);
-	GPIOC->ODR |= (1U << 13);  /* Thả Reset cao */
+	GPIOC->ODR |= (1U << 13);
 	k_busy_wait(50000U);
 
-	/* 
-	 * 4. Cấu hình AF12 (FSMC) cho các chân Port D và Port E:
-	 *  - PD0, PD1, PD4, PD5, PD7, PD8, PD9, PD10, PD14, PD15
-	 *  - PE3, PE7, PE8, PE9, PE10, PE11, PE12, PE13, PE14, PE15
-	 */
+	/* 4. Cấu hình AF12 (FSMC) cho các chân dữ liệu/điều khiển trên Port D và Port E */
 	uint32_t pd_pins = (1U << 0) | (1U << 1) | (1U << 4) | (1U << 5) |
 			   (1U << 7) | (1U << 8) | (1U << 9) | (1U << 10) |
 			   (1U << 14) | (1U << 15);
 	for (int i = 0; i < 16; i++) {
 		if (pd_pins & (1U << i)) {
 			GPIOD->MODER &= ~(3U << (i * 2));
-			GPIOD->MODER |= (2U << (i * 2)); /* Alternate Function */
-			GPIOD->OSPEEDR |= (3U << (i * 2)); /* Very High Speed */
+			GPIOD->MODER |= (2U << (i * 2));
+			GPIOD->OSPEEDR |= (3U << (i * 2));
 			if (i < 8) {
 				GPIOD->AFR[0] &= ~(0xFU << (i * 4));
-				GPIOD->AFR[0] |= (12U << (i * 4)); /* AF12: FSMC */
+				GPIOD->AFR[0] |= (12U << (i * 4));
 			} else {
 				GPIOD->AFR[1] &= ~(0xFU << ((i - 8) * 4));
 				GPIOD->AFR[1] |= (12U << ((i - 8) * 4));
@@ -250,39 +276,43 @@ int bsp_tft_lcd_init(void)
 		}
 	}
 
-	/* 5. Cấu hình thanh ghi FSMC Bank 1 (BCR1 & BTR1 cho SRAM/NOR 16-bit) */
-	FSMC_Bank1->BTCR[0] = 0x00001059U; /* 16-bit, Write Enable, Async */
-	FSMC_Bank1->BTCR[1] = 0x10000502U; /* Timing chu kỳ đọc/ghi tối ưu */
+	/*
+	 * 5. Cấu hình FSMC Bank1 Subbank 1 (NE1):
+	 *    - BCR1 = 0x00001011 (Async SRAM 16-bit, WREN=1, MBKEN=1, tắt FACCEN NOR Flash)
+	 *    - BTR1 = ADDSET=3, DATAST=10 chu kỳ HCLK (168 MHz -> chu kỳ ghi ~77 ns > 66 ns chuẩn ILI9341)
+	 */
+	FSMC_Bank1->BTCR[0] = 0x00001011U;
+	FSMC_Bank1->BTCR[1] = 0x00000A03U;
 #endif
 
-	/* 6. Chuỗi lệnh khởi động vi mạch ILI9341 */
-	lcd_write_cmd(0x01U); /* Software Reset */
+	/* 6. Khởi tạo tập lệnh chuẩn cho bộ điều khiển đồ họa ILI9341 */
+	lcd_write_cmd(0x01U);
 	k_msleep(50);
 
-	lcd_write_cmd(0xC0U); /* Power Control 1 */
+	lcd_write_cmd(0xC0U);
 	lcd_write_data(0x26U);
 
-	lcd_write_cmd(0xC1U); /* Power Control 2 */
+	lcd_write_cmd(0xC1U);
 	lcd_write_data(0x11U);
 
-	lcd_write_cmd(0xC5U); /* VCOM Control 1 */
+	lcd_write_cmd(0xC5U);
 	lcd_write_data(0x35U);
 	lcd_write_data(0x3EU);
 
-	lcd_write_cmd(0x36U); /* Memory Access Control: Portrait 240x320 RGB */
+	lcd_write_cmd(0x36U);
 	lcd_write_data(0x48U);
 
-	lcd_write_cmd(0x3AU); /* Pixel Format Set: 16-bit RGB565 */
+	lcd_write_cmd(0x3AU);
 	lcd_write_data(0x55U);
 
-	lcd_write_cmd(0xB1U); /* Frame Rate: 70Hz */
+	lcd_write_cmd(0xB1U);
 	lcd_write_data(0x00U);
 	lcd_write_data(0x1BU);
 
-	lcd_write_cmd(0x11U); /* Sleep Out */
+	lcd_write_cmd(0x11U);
 	k_msleep(120);
 
-	lcd_write_cmd(0x29U); /* Display ON */
+	lcd_write_cmd(0x29U);
 	k_msleep(20);
 
 	g_lcd_ready = true;
@@ -299,7 +329,7 @@ bool bsp_tft_lcd_is_ready(void)
 void bsp_tft_lcd_set_backlight(uint8_t brightness_pct)
 {
 #if defined(CONFIG_SOC_SERIES_STM32F4X)
-	if (brightness_pct > 0) {
+	if (brightness_pct > 0U) {
 		GPIOA->ODR |= (1U << 8);
 	} else {
 		GPIOA->ODR &= ~(1U << 8);
@@ -312,6 +342,7 @@ void bsp_tft_lcd_set_backlight(uint8_t brightness_pct)
 void bsp_tft_lcd_clear(uint16_t color)
 {
 	bsp_tft_lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, color);
+	bsp_tft_lcd_invalidate();
 }
 
 void bsp_tft_lcd_draw_pixel(int x, int y, uint16_t color)
@@ -330,10 +361,18 @@ void bsp_tft_lcd_fill_rect(int x, int y, int w, int h, uint16_t color)
 	}
 	int x1 = x + w - 1;
 	int y1 = y + h - 1;
-	if (x < 0) x = 0;
-	if (y < 0) y = 0;
-	if (x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
-	if (y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1;
+	if (x < 0) {
+		x = 0;
+	}
+	if (y < 0) {
+		y = 0;
+	}
+	if (x1 >= LCD_WIDTH) {
+		x1 = LCD_WIDTH - 1;
+	}
+	if (y1 >= LCD_HEIGHT) {
+		y1 = LCD_HEIGHT - 1;
+	}
 
 	lcd_set_window(x, y, x1, y1);
 	uint32_t total = (uint32_t)(x1 - x + 1) * (uint32_t)(y1 - y + 1);
@@ -352,26 +391,28 @@ void bsp_tft_lcd_draw_rect(int x, int y, int w, int h, uint16_t color)
 
 void bsp_tft_lcd_draw_char(int x, int y, char c, uint16_t color, uint16_t bg_color)
 {
-	if (c < ' ' || c > 'z') {
-		c = ' ';
+	if (x < 0 || y < 0 || x + 5 >= LCD_WIDTH || y + 7 >= LCD_HEIGHT) {
+		return;
 	}
-	const uint8_t *glyph = font_6x8[c - ' '];
+	unsigned char uc = (unsigned char)c;
+	if (uc < ' ' || uc > '~') {
+		uc = ' ';
+	}
+	const uint8_t *glyph = font_6x8[uc - ' '];
 	lcd_set_window(x, y, x + 5, y + 7);
 
 	for (int row = 0; row < 8; row++) {
 		for (int col = 0; col < 6; col++) {
-			if (glyph[col] & (1U << row)) {
-				lcd_write_data(color);
-			} else {
-				lcd_write_data(bg_color);
-			}
+			lcd_write_data((glyph[col] & (1U << row)) ? color : bg_color);
 		}
 	}
 }
 
 void bsp_tft_lcd_draw_string(int x, int y, const char *str, uint16_t color, uint16_t bg_color)
 {
-	if (str == NULL) return;
+	if (str == NULL) {
+		return;
+	}
 	int cur_x = x;
 	while (*str && cur_x <= LCD_WIDTH - 6) {
 		bsp_tft_lcd_draw_char(cur_x, y, *str, color, bg_color);
@@ -380,30 +421,77 @@ void bsp_tft_lcd_draw_string(int x, int y, const char *str, uint16_t color, uint
 	}
 }
 
-void bsp_tft_lcd_draw_big_digit(int x, int y, char digit, uint16_t color, uint16_t bg_color)
+/**
+ * @brief In chuỗi độ rộng cố định `fixed_chars` (tự động bù khoảng trắng xóa sạch đuôi chữ cũ, ví dụ chống lỗi `IDLE_CLOSEDG`).
+ */
+static void lcd_draw_string_padded(int x, int y, const char *str, int fixed_chars,
+				   uint16_t color, uint16_t bg_color)
+{
+	int cur_x = x;
+	bool ended = (str == NULL);
+
+	for (int i = 0; i < fixed_chars && cur_x <= LCD_WIDTH - 6; i++) {
+		char ch = ' ';
+		if (!ended) {
+			if (str[i] == '\0') {
+				ended = true;
+			} else {
+				ch = str[i];
+			}
+		}
+		bsp_tft_lcd_draw_char(cur_x, y, ch, color, bg_color);
+		cur_x += 6;
+	}
+}
+
+/**
+ * @brief Vẽ số tầng lớn 24x40 px có cắt biên dọc `[clip_y0..clip_y1]` phục vụ cuộn trượt mượt không tràn khung.
+ */
+static void lcd_draw_big_digit_clipped(int x, int y, char digit,
+				       int clip_y0, int clip_y1,
+				       uint16_t color, uint16_t bg_color)
 {
 	if (digit < '0' || digit > '9') {
 		digit = '-';
 	}
 	const uint8_t *glyph = font_6x8[digit - ' '];
-
-	/* Phóng to font 6x8 lên gấp 4 lần (24x32 pixel) cực kỳ sắc nét */
-	int scale_x = 4;
-	int scale_y = 5;
+	const int scale_x = 4;
+	const int scale_y = 5;
 
 	for (int col = 0; col < 6; col++) {
 		uint8_t bits = glyph[col];
 		for (int row = 0; row < 8; row++) {
+			int py0 = y + row * scale_y;
+			int py1 = py0 + scale_y - 1;
+			if (py1 < clip_y0 || py0 > clip_y1) {
+				continue;
+			}
+			if (py0 < clip_y0) {
+				py0 = clip_y0;
+			}
+			if (py1 > clip_y1) {
+				py1 = clip_y1;
+			}
 			uint16_t c = (bits & (1U << row)) ? color : bg_color;
-			bsp_tft_lcd_fill_rect(x + col * scale_x, y + row * scale_y, scale_x, scale_y, c);
+			bsp_tft_lcd_fill_rect(x + col * scale_x, py0, scale_x, py1 - py0 + 1, c);
 		}
 	}
 }
 
-void bsp_tft_lcd_draw_progress_bar(int x, int y, int w, int h, int pct, uint16_t bar_color, uint16_t bg_color)
+void bsp_tft_lcd_draw_big_digit(int x, int y, char digit, uint16_t color, uint16_t bg_color)
 {
-	if (pct < 0) pct = 0;
-	if (pct > 100) pct = 100;
+	lcd_draw_big_digit_clipped(x, y, digit, 0, LCD_HEIGHT - 1, color, bg_color);
+}
+
+void bsp_tft_lcd_draw_progress_bar(int x, int y, int w, int h, int pct,
+				   uint16_t bar_color, uint16_t bg_color)
+{
+	if (pct < 0) {
+		pct = 0;
+	}
+	if (pct > 100) {
+		pct = 100;
+	}
 
 	bsp_tft_lcd_draw_rect(x, y, w, h, LCD_COLOR_GRAY);
 	int fill_w = ((w - 2) * pct) / 100;
@@ -418,12 +506,43 @@ void bsp_tft_lcd_draw_progress_bar(int x, int y, int w, int h, int pct, uint16_t
 }
 
 /**
- * @brief Vẽ 7 ô nút gọi tầng căn giữa hoàn hảo không tràn lề:
- *        Mỗi ô 24x24 px, khoảng cách 6 px. Tổng 204 px, lề mỗi bên 18 px.
+ * @brief Vẽ biểu tượng mũi tên tam giác đồ họa sắc nét (thay vì ký tự UTF-8 gây lỗi mất hình trên font ASCII).
  */
-static void draw_call_queue_row(int y, uint8_t call_mask, uint8_t current_floor)
+static void lcd_draw_dir_badge(int x, int y, elevator_dir_t dir)
 {
-	bsp_tft_lcd_draw_string(84, y - 10, "CALL QUEUE", LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
+	bsp_tft_lcd_fill_rect(x, y, 11, 9, LCD_COLOR_NAVY);
+
+	if (dir == ELEV_DIR_UP) {
+		for (int r = 0; r < 5; r++) {
+			bsp_tft_lcd_fill_rect(x + 5 - r, y + 1 + r, 2 * r + 1, 1, LCD_COLOR_GREEN);
+		}
+		bsp_tft_lcd_fill_rect(x + 4, y + 6, 3, 2, LCD_COLOR_GREEN);
+		lcd_draw_string_padded(x + 14, y + 1, "UP", 6, LCD_COLOR_GREEN, LCD_COLOR_NAVY);
+	} else if (dir == ELEV_DIR_DOWN) {
+		bsp_tft_lcd_fill_rect(x + 4, y + 1, 3, 2, LCD_COLOR_ORANGE);
+		for (int r = 0; r < 5; r++) {
+			bsp_tft_lcd_fill_rect(x + 1 + r, y + 3 + r, 9 - 2 * r, 1, LCD_COLOR_ORANGE);
+		}
+		lcd_draw_string_padded(x + 14, y + 1, "DOWN", 6, LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
+	} else {
+		bsp_tft_lcd_fill_rect(x + 1, y + 4, 9, 2, LCD_COLOR_CYAN);
+		lcd_draw_string_padded(x + 14, y + 1, "IDLE", 6, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
+	}
+}
+
+/**
+ * @brief Vẽ 7 ô nút gọi tầng căn giữa (chỉ vẽ lại khi `call_mask` hoặc `current_floor` thay đổi,
+ *        và xóa triệt để khung viền ngoài `bx - 1, y - 1` khi cabin rời tầng theo cả chiều Lên lẫn Xuống).
+ */
+static void draw_call_queue_row(int y, uint8_t call_mask, uint8_t current_floor, bool force_redraw)
+{
+	if (!force_redraw && call_mask == g_prev_call_mask && current_floor == g_prev_queue_floor) {
+		return;
+	}
+
+	if (force_redraw) {
+		bsp_tft_lcd_draw_string(90, y - 11, "CALL QUEUE", LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
+	}
 
 	const int start_x = 18;
 	const int box_w = 24;
@@ -432,201 +551,321 @@ static void draw_call_queue_row(int y, uint8_t call_mask, uint8_t current_floor)
 
 	for (int i = 0; i < 7; i++) {
 		int bx = start_x + i * (box_w + gap);
-		int floor_num = i + 1;
+		uint8_t floor_num = (uint8_t)(i + 1);
 		bool is_called = (call_mask & (1U << i)) != 0U;
 		bool is_current = (floor_num == current_floor);
+
+		bool prev_called = (g_prev_call_mask & (1U << i)) != 0U;
+		bool prev_current = (floor_num == g_prev_queue_floor);
+		if (!force_redraw && is_called == prev_called && is_current == prev_current) {
+			continue;
+		}
 
 		uint16_t bg = is_called ? LCD_COLOR_YELLOW : LCD_COLOR_DARK_GRAY;
 		uint16_t text_c = is_called ? LCD_COLOR_BLACK : LCD_COLOR_WHITE;
 
 		bsp_tft_lcd_fill_rect(bx, y, box_w, box_h, bg);
-		bsp_tft_lcd_draw_char(bx + 9, y + 8, '0' + floor_num, text_c, bg);
+		bsp_tft_lcd_draw_char(bx + 9, y + 8, (char)('0' + floor_num), text_c, bg);
 
 		if (is_current) {
+			/* Đánh dấu tầng hiện tại bằng viền đôi màu xanh lá rực rỡ */
 			bsp_tft_lcd_draw_rect(bx - 1, y - 1, box_w + 2, box_h + 2, LCD_COLOR_GREEN);
+			bsp_tft_lcd_draw_rect(bx, y, box_w, box_h, LCD_COLOR_GREEN);
 		} else {
-			bsp_tft_lcd_draw_rect(bx, y, box_w, box_h, LCD_COLOR_GRAY);
+			/* Xóa sạch viền xanh bên ngoài (bx - 1, y - 1) về màu nền NAVY khi thang rời tầng! */
+			bsp_tft_lcd_draw_rect(bx - 1, y - 1, box_w + 2, box_h + 2, LCD_COLOR_NAVY);
+			bsp_tft_lcd_draw_rect(bx, y, box_w, box_h,
+					      is_called ? LCD_COLOR_WHITE : LCD_COLOR_GRAY);
 		}
 	}
+
+	g_prev_call_mask = call_mask;
+	g_prev_queue_floor = current_floor;
 }
 
 /**
- * @brief Render toàn bộ Dashboard HMI theo trạng thái thời gian thực
+ * @brief Cập nhật thanh Header trên cùng (0..25 px): Tên hệ thống + Giờ thực DS3231 RTC + Trạng thái mạng CAN.
  */
+static void render_top_header(uint32_t now_ms, bool can_fault)
+{
+	if (!g_hdr_drawn) {
+		bsp_tft_lcd_fill_rect(0, 0, LCD_WIDTH, 26, LCD_COLOR_DARK_GRAY);
+		bsp_tft_lcd_draw_string(8, 9, "BKIT ELEVATOR", LCD_COLOR_WHITE, LCD_COLOR_DARK_GRAY);
+		g_hdr_drawn = true;
+	}
+
+	if (now_ms - g_last_rtc_poll_ms >= 1000U || g_last_rtc_poll_ms == 0U) {
+		g_last_rtc_poll_ms = now_ms;
+		uint16_t y = 0U;
+		uint8_t mo = 0U, d = 0U, h = 0U, mi = 0U, s = 0U;
+		if (bsp_rtc_get_datetime(&y, &mo, &d, &h, &mi, &s) == 0) {
+			g_rtc_valid = true;
+			g_rtc_h = h;
+			g_rtc_m = mi;
+			g_rtc_s = s;
+		} else {
+			g_rtc_valid = false;
+		}
+	}
+
+	uint32_t hh, mm, ss;
+	if (g_rtc_valid) {
+		hh = g_rtc_h;
+		mm = g_rtc_m;
+		ss = g_rtc_s;
+	} else {
+		uint32_t sec = now_ms / 1000U;
+		hh = (sec / 3600U) % 24U;
+		mm = (sec / 60U) % 60U;
+		ss = sec % 60U;
+	}
+
+	char time_str[12];
+	snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", hh, mm, ss);
+	lcd_draw_string_padded(104, 9, time_str, 8, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_DARK_GRAY);
+
+	if (can_fault) {
+		lcd_draw_string_padded(178, 9, "[CAN:ERR]", 9, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+	} else {
+		lcd_draw_string_padded(178, 9, "[CAN:OK]", 9, LCD_COLOR_GREEN, LCD_COLOR_DARK_GRAY);
+	}
+}
+
+void bsp_tft_lcd_animate_floor_rolling(uint8_t old_floor, uint8_t new_floor, elevator_dir_t dir)
+{
+	if (!g_lcd_ready || old_floor == new_floor || old_floor < 1U || old_floor > 9U) {
+		return;
+	}
+
+	const int base_y = 52;
+	const int h = 40;
+	const int steps = 4;
+
+	for (int s = 1; s <= steps; s++) {
+		int dy = (s * h) / steps;
+		bsp_tft_lcd_fill_rect(104, base_y, 32, h, LCD_COLOR_NAVY);
+
+		if (dir >= 0) {
+			lcd_draw_big_digit_clipped(108, base_y - dy, (char)('0' + old_floor),
+						   base_y, base_y + h - 1, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+			lcd_draw_big_digit_clipped(108, base_y + h - dy, (char)('0' + new_floor),
+						   base_y, base_y + h - 1, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		} else {
+			lcd_draw_big_digit_clipped(108, base_y + dy, (char)('0' + old_floor),
+						   base_y, base_y + h - 1, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+			lcd_draw_big_digit_clipped(108, base_y - h + dy, (char)('0' + new_floor),
+						   base_y, base_y + h - 1, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		}
+		k_msleep(10);
+	}
+}
+
 void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
-                                  uint8_t call_mask,
-                                  uint8_t door_pct,
-                                  float load_kg,
-                                  float temp_c,
-                                  bool curtain_blocked,
-                                  const char *last_log_msg)
+				  uint8_t call_mask,
+				  uint8_t door_pct,
+				  float load_kg,
+				  float temp_c,
+				  bool curtain_blocked,
+				  const char *last_log_msg)
 {
 	if (!g_lcd_ready || tel == NULL) {
 		return;
 	}
 
+	/* Xác định chế độ màn hình ưu tiên an toàn: E-Stop > Báo cháy > Quá tải > Bình thường */
+	lcd_ui_mode_t target_mode = LCD_UI_NORMAL;
+	if (tel->estop_active) {
+		target_mode = LCD_UI_ESTOP;
+	} else if (tel->fire_active) {
+		target_mode = LCD_UI_FIRE;
+	} else if (tel->overload_active) {
+		target_mode = LCD_UI_OVERLOAD;
+	}
+
 	uint32_t now = k_uptime_get_32();
-	if (now - g_last_render_uptime < 80U && tel->current_floor == g_last_rendered_floor) {
-		return; /* Giới hạn tốc độ quét tránh chiếm bus quá mức */
+	bool mode_changed = (target_mode != g_ui_mode);
+
+	if (!mode_changed && (now - g_last_render_uptime < 80U) &&
+	    tel->current_floor == g_prev_floor && call_mask == g_prev_call_mask) {
+		return;
 	}
 	g_last_render_uptime = now;
-	g_last_rendered_floor = tel->current_floor;
 
-	/* ========================================================================
-	 * TRƯỜNG HỢP 3: BÁO ĐỘNG QUÁ TẢI (OVERLOAD HAZARD > 800 KG)
-	 * ======================================================================== */
-	if (tel->overload_active || (double)load_kg > 800.0) {
-		bsp_tft_lcd_fill_rect(10, 40, 220, 100, LCD_COLOR_RED);
-		bsp_tft_lcd_draw_rect(12, 42, 216, 96, LCD_COLOR_WHITE);
-		bsp_tft_lcd_draw_string(30, 55, "!! OVERLOAD DETECTED !!", LCD_COLOR_WHITE, LCD_COLOR_RED);
-		bsp_tft_lcd_draw_string(45, 75, "PLEASE STEP OUT!", LCD_COLOR_YELLOW, LCD_COLOR_RED);
-		bsp_tft_lcd_draw_string(35, 95, "DOOR CANNOT CLOSE", LCD_COLOR_WHITE, LCD_COLOR_RED);
+	/* Quy đổi sang số nguyên để định dạng nhanh, chính xác tuyệt đối, không bao giờ lỗi `*float*` */
+	int load_i = (int)(load_kg + 0.5f);
+	if (load_i < 0) {
+		load_i = 0;
+	}
+	int temp_dc = (int)(temp_c * 10.0f + ((temp_c >= 0.0f) ? 0.5f : -0.5f));
+	int temp_int = temp_dc / 10;
+	int temp_frac = abs(temp_dc % 10);
 
-		bsp_tft_lcd_draw_string(20, 160, "DOOR: LOCKED OPEN  [100%]", LCD_COLOR_RED, LCD_COLOR_NAVY);
-		bsp_tft_lcd_draw_progress_bar(20, 175, 200, 12, 100, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+	render_top_header(now, tel->can_fault_active);
 
-		char buf[40];
-		snprintf(buf, sizeof(buf), "LOAD: %.0f kg / 800 kg [OVER]", (double)load_kg);
-		bsp_tft_lcd_draw_string(20, 235, buf, LCD_COLOR_RED, LCD_COLOR_NAVY);
-		bsp_tft_lcd_draw_progress_bar(20, 250, 200, 12, 100, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+	/* Khi chuyển qua lại giữa Dashboard và Popup sự cố -> Xóa sạch toàn bộ vùng thân màn hình! */
+	if (mode_changed) {
+		bsp_tft_lcd_fill_rect(0, 26, LCD_WIDTH, LCD_HEIGHT - 26, LCD_COLOR_NAVY);
+		g_ui_mode = target_mode;
+		g_prev_floor = 0xFFU;
+		g_prev_call_mask = 0xFFU;
+		g_prev_queue_floor = 0xFFU;
+
+		if (target_mode == LCD_UI_NORMAL) {
+			bsp_tft_lcd_draw_rect(10, 160, 220, 64, LCD_COLOR_DARK_GRAY);
+			bsp_tft_lcd_draw_rect(10, 230, 220, 84, LCD_COLOR_DARK_GRAY);
+		} else if (target_mode == LCD_UI_OVERLOAD) {
+			bsp_tft_lcd_fill_rect(10, 38, 220, 104, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_rect(12, 40, 216, 100, LCD_COLOR_WHITE);
+			bsp_tft_lcd_draw_string(36, 54, "!! OVERLOAD DETECTED !!", LCD_COLOR_WHITE, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_string(48, 76, "PLEASE STEP OUT NOW!", LCD_COLOR_YELLOW, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_string(36, 98, "MOTOR & DOOR INTERLOCKED", LCD_COLOR_WHITE, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_rect(10, 156, 220, 148, LCD_COLOR_RED);
+		} else if (target_mode == LCD_UI_FIRE) {
+			bsp_tft_lcd_fill_rect(10, 38, 220, 104, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_rect(12, 40, 216, 100, LCD_COLOR_WHITE);
+			bsp_tft_lcd_draw_string(36, 54, "!! FIRE ALARM ACTIVE !!", LCD_COLOR_WHITE, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_string(27, 98, "EVACUATING CABIN TO FLOOR 1", LCD_COLOR_WHITE, LCD_COLOR_RED);
+			bsp_tft_lcd_draw_rect(10, 156, 220, 148, LCD_COLOR_RED);
+		} else if (target_mode == LCD_UI_ESTOP) {
+			bsp_tft_lcd_fill_rect(10, 38, 220, 104, LCD_COLOR_ORANGE);
+			bsp_tft_lcd_draw_rect(12, 40, 216, 100, LCD_COLOR_BLACK);
+			bsp_tft_lcd_draw_string(33, 54, "EMERGENCY STOP ACTIVE!", LCD_COLOR_BLACK, LCD_COLOR_ORANGE);
+			bsp_tft_lcd_draw_string(33, 76, "TRACTION MOTOR CUT OFF", LCD_COLOR_RED, LCD_COLOR_ORANGE);
+			bsp_tft_lcd_draw_string(24, 98, "PRESS KEY [E] / CLI TO RESET", LCD_COLOR_BLACK, LCD_COLOR_ORANGE);
+			bsp_tft_lcd_draw_rect(10, 156, 220, 148, LCD_COLOR_ORANGE);
+		}
+	}
+
+	char buf[44];
+
+	/* ================= MÀN HÌNH KHẨN CẤP 1: QUÁ TẢI CABIN ================= */
+	if (target_mode == LCD_UI_OVERLOAD) {
+		snprintf(buf, sizeof(buf), "CABIN FLOOR : F%u (DOOR %u%%)", tel->current_floor, door_pct);
+		lcd_draw_string_padded(20, 170, buf, 32, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		bsp_tft_lcd_draw_progress_bar(20, 186, 200, 12, door_pct, LCD_COLOR_ORANGE, LCD_COLOR_DARK_GRAY);
+
+		snprintf(buf, sizeof(buf), "LOAD: %d / 800 kg [OVERLOAD]", load_i);
+		lcd_draw_string_padded(20, 216, buf, 32, LCD_COLOR_RED, LCD_COLOR_NAVY);
+		bsp_tft_lcd_draw_progress_bar(20, 232, 200, 12, 100, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+
+		lcd_draw_string_padded(20, 264, "REDUCE LOAD <= 750 kg TO CLEAR", 32,
+				       LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
 		return;
 	}
 
-	/* ========================================================================
-	 * TRƯỜNG HỢP 5: BÁO CHÁY KHẨN CẤP (FIRE ALARM SƠ TÁN VỀ TẦNG 1)
-	 * ======================================================================== */
-	if (tel->fire_active || (double)temp_c >= 60.0) {
-		bsp_tft_lcd_fill_rect(10, 40, 220, 100, LCD_COLOR_RED);
-		bsp_tft_lcd_draw_rect(12, 42, 216, 96, LCD_COLOR_WHITE);
-		bsp_tft_lcd_draw_string(35, 55, "FIRE ALARM DETECTED!", LCD_COLOR_WHITE, LCD_COLOR_RED);
-		char tbuf[32];
-		snprintf(tbuf, sizeof(tbuf), "WELL TEMP: %.1f C", (double)temp_c);
-		bsp_tft_lcd_draw_string(55, 75, tbuf, LCD_COLOR_YELLOW, LCD_COLOR_RED);
-		bsp_tft_lcd_draw_string(28, 95, "EVACUATING TO FLOOR 1", LCD_COLOR_WHITE, LCD_COLOR_RED);
+	/* ================= MÀN HÌNH KHẨN CẤP 2: BÁO CHÁY SƠ TÁN ================= */
+	if (target_mode == LCD_UI_FIRE) {
+		snprintf(buf, sizeof(buf), "WELL TEMP: %d.%d C (>= 55.0 C)", temp_int, temp_frac);
+		lcd_draw_string_padded(36, 76, buf, 28, LCD_COLOR_YELLOW, LCD_COLOR_RED);
 
-		bsp_tft_lcd_draw_string(20, 160, "MOTION: DIRECT TO F1", LCD_COLOR_RED, LCD_COLOR_NAVY);
-		bsp_tft_lcd_draw_progress_bar(20, 175, 200, 12, 100, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+		if (tel->current_floor > ELEV_MIN_FLOOR) {
+			snprintf(buf, sizeof(buf), "EVACUATION: F%u -> F1 (DESCEND)", tel->current_floor);
+		} else {
+			snprintf(buf, sizeof(buf), "ARRIVED F1: SAFE EXIT OPEN %u%%", door_pct);
+		}
+		lcd_draw_string_padded(20, 170, buf, 32, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		bsp_tft_lcd_draw_progress_bar(20, 188, 200, 12, door_pct, LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+
+		bsp_tft_lcd_draw_big_digit(108, 214, (char)('0' + tel->current_floor),
+					   LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		lcd_draw_string_padded(20, 272, "PRESS KEY [E] / CLEAR WHEN SAFE", 32,
+				       LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
 		return;
 	}
 
-	/* ========================================================================
-	 * TRƯỜNG HỢP 6: DỪNG KHẨN CẤP (EMERGENCY STOP E-STOP)
-	 * ======================================================================== */
-	if (tel->estop_active) {
-		bsp_tft_lcd_fill_rect(10, 40, 220, 100, LCD_COLOR_ORANGE);
-		bsp_tft_lcd_draw_rect(12, 42, 216, 96, LCD_COLOR_BLACK);
-		bsp_tft_lcd_draw_string(30, 55, "EMERGENCY STOP ACTIVE", LCD_COLOR_BLACK, LCD_COLOR_ORANGE);
-		bsp_tft_lcd_draw_string(35, 75, "SYSTEM LOCKED BY USER", LCD_COLOR_RED, LCD_COLOR_ORANGE);
-		bsp_tft_lcd_draw_string(25, 95, "CONTACT SERVICE OPERATOR", LCD_COLOR_BLACK, LCD_COLOR_ORANGE);
+	/* ================= MÀN HÌNH KHẨN CẤP 3: PHANH E-STOP ================= */
+	if (target_mode == LCD_UI_ESTOP) {
+		snprintf(buf, sizeof(buf), "LOCKED AT FLOOR: F%u (Y0=0 Y1=0)", tel->current_floor);
+		lcd_draw_string_padded(20, 172, buf, 32, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+
+		snprintf(buf, sizeof(buf), "EXTI LATENCY   : %u us (MAX %u)",
+			 tel->last_exti_latency_us, tel->max_exti_latency_us);
+		lcd_draw_string_padded(20, 198, buf, 32, LCD_COLOR_CYAN, LCD_COLOR_NAVY);
+
+		snprintf(buf, sizeof(buf), "LOAD: %d kg | TEMP: %d.%d C", load_i, temp_int, temp_frac);
+		lcd_draw_string_padded(20, 224, buf, 32, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
+
+		lcd_draw_string_padded(20, 264, "STATUS: FAIL_SAFE INTERLOCKED", 32,
+				       LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
 		return;
 	}
 
-	/* ========================================================================
-	 * KHỐI 1: HEADER (0 -> 28 px)
-	 * ======================================================================== */
-	bsp_tft_lcd_fill_rect(0, 0, LCD_WIDTH, 26, LCD_COLOR_DARK_GRAY);
-	bsp_tft_lcd_draw_string(10, 8, "BKIT ELEVATOR", LCD_COLOR_WHITE, LCD_COLOR_DARK_GRAY);
+	/* ================= MÀN HÌNH DASHBOARD VẬN HÀNH 4 KHỐI ================= */
+	lcd_draw_dir_badge(92, 34, (elevator_dir_t)tel->direction);
 
-	uint32_t sec = now / 1000U;
-	char time_str[16];
-	snprintf(time_str, sizeof(time_str), "%02u:%02u:%02u", (sec / 3600U) % 24U, (sec / 60U) % 60U, sec % 60U);
-	bsp_tft_lcd_draw_string(115, 8, time_str, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_DARK_GRAY);
+	if (g_prev_floor != tel->current_floor) {
+		if (g_prev_floor != 0xFFU) {
+			bsp_tft_lcd_animate_floor_rolling(g_prev_floor, tel->current_floor,
+							  (elevator_dir_t)tel->direction);
+		}
+		bsp_tft_lcd_draw_big_digit(108, 52, (char)('0' + tel->current_floor),
+					   LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
+		g_prev_floor = tel->current_floor;
+	}
 
-	if (tel->can_fault_active) {
-		bsp_tft_lcd_draw_string(185, 8, "[CAN:ERR]", LCD_COLOR_RED, LCD_COLOR_DARK_GRAY);
+	if (tel->target_floor > 0U) {
+		snprintf(buf, sizeof(buf), "Target Floor: F%u", tel->target_floor);
 	} else {
-		bsp_tft_lcd_draw_string(185, 8, "[CAN:OK]", LCD_COLOR_GREEN, LCD_COLOR_DARK_GRAY);
+		snprintf(buf, sizeof(buf), "Target Floor: --");
 	}
+	lcd_draw_string_padded(72, 100, buf, 18, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
 
-	/* ========================================================================
-	 * KHỐI 2: SỐ TẦNG & HÀNG NÚT GỌI TẦNG (30 -> 155 px)
-	 * ======================================================================== */
-	if (tel->direction == ELEV_DIR_UP) {
-		bsp_tft_lcd_draw_string(100, 36, "▲  UP  ", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
-	} else if (tel->direction == ELEV_DIR_DOWN) {
-		bsp_tft_lcd_draw_string(100, 36, "▼  DOWN", LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
+	/* Hàng 7 ô gọi tầng căn giữa (xóa sạch viền xanh tầng cũ theo cả chiều Lên & Xuống) */
+	draw_call_queue_row(128, call_mask, tel->current_floor, mode_changed);
+
+	/* KHỐI 3: CỬA & RÈM QUANG CHỐNG KẸP */
+	bool door_reopening_alert = curtain_blocked &&
+				    (tel->state == HSM_STATE_DOOR_OPENING ||
+				     tel->state == HSM_STATE_DOOR_OPEN ||
+				     tel->state == HSM_STATE_DOOR_CLOSING);
+
+	if (door_reopening_alert) {
+		lcd_draw_string_padded(20, 168, "DOOR: OBSTACLE! RE-OPENING", 28,
+				       LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
+		bsp_tft_lcd_draw_progress_bar(20, 184, 200, 12, door_pct,
+					      LCD_COLOR_ORANGE, LCD_COLOR_DARK_GRAY);
 	} else {
-		bsp_tft_lcd_draw_string(100, 36, "—  IDLE", LCD_COLOR_WHITE, LCD_COLOR_NAVY);
+		if (door_pct == 0U) {
+			snprintf(buf, sizeof(buf), "DOOR: CLOSED            [0%%]");
+		} else if (door_pct >= 100U) {
+			snprintf(buf, sizeof(buf), "DOOR: OPEN            [100%%]");
+		} else if (tel->state == HSM_STATE_DOOR_OPENING) {
+			snprintf(buf, sizeof(buf), "DOOR: OPENING         [%3u%%]", door_pct);
+		} else {
+			snprintf(buf, sizeof(buf), "DOOR: CLOSING         [%3u%%]", door_pct);
+		}
+		lcd_draw_string_padded(20, 168, buf, 28, LCD_COLOR_CYAN, LCD_COLOR_NAVY);
+		bsp_tft_lcd_draw_progress_bar(20, 184, 200, 12, door_pct,
+					      LCD_COLOR_CYAN, LCD_COLOR_DARK_GRAY);
 	}
-
-	/* Vẽ số tầng lớn 24x40 pixel tại tọa độ X=108, Y=54 */
-	bsp_tft_lcd_draw_big_digit(108, 54, '0' + tel->current_floor, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-
-	char target_str[32];
-	snprintf(target_str, sizeof(target_str), "Target Floor: %u", tel->target_floor);
-	bsp_tft_lcd_draw_string(72, 102, target_str, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
-
-	/* 7 ô gọi tầng */
-	draw_call_queue_row(128, call_mask, tel->current_floor);
-
-	/* ========================================================================
-	 * KHỐI 3: THANH TIẾN TRÌNH CỬA & RÈM QUANG (160 -> 225 px)
-	 * ======================================================================== */
-	bsp_tft_lcd_draw_rect(10, 160, 220, 65, LCD_COLOR_DARK_GRAY);
 
 	if (curtain_blocked) {
-		bsp_tft_lcd_draw_string(20, 168, "DOOR: OBSTACLE! RE-OPENING", LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
-		bsp_tft_lcd_draw_progress_bar(20, 185, 200, 12, door_pct, LCD_COLOR_ORANGE, LCD_COLOR_DARK_GRAY);
-		bsp_tft_lcd_draw_string(20, 205, "Light Curtain: BEAM BLOCKED", LCD_COLOR_RED, LCD_COLOR_NAVY);
+		lcd_draw_string_padded(20, 204, "Light Curtain: BEAM BLOCKED", 28,
+				       LCD_COLOR_RED, LCD_COLOR_NAVY);
 	} else {
-		char door_str[36];
-		if (door_pct == 0) {
-			snprintf(door_str, sizeof(door_str), "DOOR: CLOSED           [0%%]");
-		} else if (door_pct >= 100) {
-			snprintf(door_str, sizeof(door_str), "DOOR: OPEN           [100%%]");
-		} else {
-			snprintf(door_str, sizeof(door_str), "DOOR: MOVING          [%2d%%]", door_pct);
-		}
-		bsp_tft_lcd_draw_string(20, 168, door_str, LCD_COLOR_CYAN, LCD_COLOR_NAVY);
-		bsp_tft_lcd_draw_progress_bar(20, 185, 200, 12, door_pct, LCD_COLOR_CYAN, LCD_COLOR_DARK_GRAY);
-		bsp_tft_lcd_draw_string(20, 205, "Light Curtain: CLEAR (SAFE)", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
+		lcd_draw_string_padded(20, 204, "Light Curtain: CLEAR (SAFE)", 28,
+				       LCD_COLOR_GREEN, LCD_COLOR_NAVY);
 	}
 
-	/* ========================================================================
-	 * KHỐI 4: CẢM BIẾN TẢI, NHIỆT ĐỘ & HỘP ĐEN (230 -> 315 px)
-	 * ======================================================================== */
-	bsp_tft_lcd_draw_rect(10, 230, 220, 85, LCD_COLOR_DARK_GRAY);
+	/* KHỐI 4: TẢI TRỌNG, NHIỆT ĐỘ & NHẬT KÝ TRẠNG THÁI */
+	int load_pct = (load_i * 100) / (int)ELEV_LOAD_OVERLOAD_KG;
+	int bar_pct = (load_pct > 100) ? 100 : load_pct;
+	snprintf(buf, sizeof(buf), "LOAD: %d/800 kg (%d%%)", load_i, load_pct);
+	lcd_draw_string_padded(20, 238, buf, 28, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
+	bsp_tft_lcd_draw_progress_bar(20, 252, 200, 10, bar_pct,
+				      (load_pct >= 85) ? LCD_COLOR_YELLOW : LCD_COLOR_GREEN,
+				      LCD_COLOR_DARK_GRAY);
 
-	char load_str[40];
-	int load_pct = (int)(((double)load_kg * 100.0) / 800.0);
-	snprintf(load_str, sizeof(load_str), "LOAD: %.0f/800 kg (%d%%)", (double)load_kg, load_pct);
-	bsp_tft_lcd_draw_string(20, 238, load_str, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
-	bsp_tft_lcd_draw_progress_bar(20, 252, 200, 10, load_pct, (load_pct > 75) ? LCD_COLOR_YELLOW : LCD_COLOR_GREEN, LCD_COLOR_DARK_GRAY);
+	snprintf(buf, sizeof(buf), "TEMP: %d.%d C (%s)",
+		 temp_int, temp_frac, (temp_dc >= 480) ? "WARM" : "SAFE");
+	lcd_draw_string_padded(20, 270, buf, 28, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
 
-	char temp_str[36];
-	snprintf(temp_str, sizeof(temp_str), "TEMP: %.1f C (SAFE)", (double)temp_c);
-	bsp_tft_lcd_draw_string(20, 270, temp_str, LCD_COLOR_WHITE, LCD_COLOR_NAVY);
-
-	if (last_log_msg != NULL && last_log_msg[0] != '\0') {
-		char log_disp[40];
-		snprintf(log_disp, sizeof(log_disp), "LOG : %.30s", last_log_msg);
-		bsp_tft_lcd_draw_string(20, 290, log_disp, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
-	}
-}
-
-/**
- * @brief Hiệu ứng cuộn số mượt khi chuyển tầng (Vertical Rolling)
- */
-void bsp_tft_lcd_animate_floor_rolling(uint8_t old_floor, uint8_t new_floor, elevator_dir_t dir)
-{
-	if (!g_lcd_ready || old_floor == new_floor) {
-		return;
-	}
-	int base_y = 54;
-	int h = 40;
-	int steps = 6;
-
-	for (int s = 1; s <= steps; s++) {
-		int dy = (s * h) / steps;
-		bsp_tft_lcd_fill_rect(104, base_y - 10, 32, h + 20, LCD_COLOR_NAVY);
-
-		if (dir == ELEV_DIR_UP) {
-			bsp_tft_lcd_draw_big_digit(108, base_y - dy, '0' + old_floor, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-			bsp_tft_lcd_draw_big_digit(108, base_y + h - dy, '0' + new_floor, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-		} else {
-			bsp_tft_lcd_draw_big_digit(108, base_y + dy, '0' + old_floor, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-			bsp_tft_lcd_draw_big_digit(108, base_y - h + dy, '0' + new_floor, LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
-		}
-		k_msleep(20);
+	if (tel->can_fault_active) {
+		lcd_draw_string_padded(20, 290, "STATE: FAIL_SAFE (CAN LOST)", 28,
+				       LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
+	} else {
+		snprintf(buf, sizeof(buf), "STATE: %.21s",
+			 (last_log_msg != NULL && last_log_msg[0] != '\0') ? last_log_msg : "IDLE_CLOSED");
+		lcd_draw_string_padded(20, 290, buf, 28, LCD_COLOR_LIGHT_GRAY, LCD_COLOR_NAVY);
 	}
 }

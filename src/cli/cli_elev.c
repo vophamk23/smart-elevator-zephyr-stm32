@@ -173,10 +173,12 @@ static int cmd_elev_fault(const struct shell *sh, size_t argc, char **argv)
 	elevator_event_t ev = { .isr_cycles = k_cycle_get_32() };
 
 	if (strcmp(argv[1], "fire") == 0) {
+		bsp_adc_set_hil_temp_override(620);
 		ev.type = EV_OVERHEAT_TEMP;      /* Giả lập LM35 nóng 62.0°C (620 deci-C) */
 		ev.param = 620U;
 		(void)can_bus_send_emergency(1U, 0U);
 	} else if (strcmp(argv[1], "overload") == 0) {
+		bsp_adc_set_hil_load_override(920);
 		ev.type = EV_OVERLOAD_SET;       /* Giả lập biến trở VR1 nặng 920 kg */
 		ev.param = 920U;
 	} else if (strcmp(argv[1], "can_drop") == 0) {
@@ -184,9 +186,11 @@ static int cmd_elev_fault(const struct shell *sh, size_t argc, char **argv)
 		shell_print(sh, "HIL: CAN link drop active (Fail-Safe triggers in 2000 ms)");
 		return 0;
 	} else if (strcmp(argv[1], "estop") == 0) {
+		bsp_gpio_set_motor_outputs(false, false);
 		ev.type = EV_ESTOP_EXTI;         /* Giả lập ngắt nút dừng khẩn cấp X1 */
 	} else if (strcmp(argv[1], "clear") == 0) {
 		can_bus_set_hil_drop(false);
+		bsp_adc_clear_hil_overrides();
 		ev.type = EV_CLEAR_FAULT;        /* Xóa toàn bộ cờ lỗi đang chốt trong g_hsm */
 	} else {
 		shell_error(sh, "Unknown fault type: %s", argv[1]);
@@ -244,6 +248,51 @@ static int cmd_elev_role(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "Node role set to %s",
 		    (can_bus_get_role() == NODE_ROLE_HALL) ? "HALL (Kit 2)" : "CABIN (Kit 1)");
 	return 0;
+}
+
+/**
+ * @brief Lệnh `elev sensor <load|temp|auto> [val]`: đồng bộ thanh kéo cảm biến từ PC Digital Twin xuống STM32.
+ */
+static int cmd_elev_sensor(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_error(sh, "Usage: elev sensor <load <0..1000>|temp <deci_c>|auto>");
+		return -EINVAL;
+	}
+
+	if (strcmp(argv[1], "auto") == 0) {
+		bsp_adc_clear_hil_overrides();
+		shell_print(sh, "HIL sensor overrides cleared (using real VR1 & LM35)");
+		return 0;
+	}
+
+	if (argc < 3) {
+		shell_error(sh, "Usage: elev sensor <load|temp> <value|auto>");
+		return -EINVAL;
+	}
+
+	if (strcmp(argv[1], "load") == 0) {
+		if (strcmp(argv[2], "auto") == 0) {
+			bsp_adc_set_hil_load_override(-1);
+		} else {
+			int kg = atoi(argv[2]);
+			bsp_adc_set_hil_load_override(kg);
+		}
+		return 0;
+	}
+
+	if (strcmp(argv[1], "temp") == 0) {
+		if (strcmp(argv[2], "auto") == 0) {
+			bsp_adc_set_hil_temp_override(-1);
+		} else {
+			int dc = atoi(argv[2]);
+			bsp_adc_set_hil_temp_override(dc);
+		}
+		return 0;
+	}
+
+	shell_error(sh, "Unknown sensor '%s' (use load|temp|auto)", argv[1]);
+	return -EINVAL;
 }
 
 /**
@@ -361,6 +410,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_elev,
 	SHELL_CMD_ARG(call, NULL, "elev call <1..7> [cabin|up|down]", cmd_elev_call, 2, 1),
 	SHELL_CMD_ARG(door, NULL, "elev door <open|close|obstruct>", cmd_elev_door, 2, 0),
 	SHELL_CMD_ARG(fault, NULL, "elev fault <fire|overload|can_drop|estop|clear>", cmd_elev_fault, 2, 0),
+	SHELL_CMD_ARG(sensor, NULL, "elev sensor <load <kg>|temp <deci_c>|auto>", cmd_elev_sensor, 2, 1),
 	SHELL_CMD_ARG(mode, NULL, "elev mode <loopback|normal>", cmd_elev_mode, 2, 0),
 	SHELL_CMD_ARG(role, NULL, "elev role <cabin|hall>", cmd_elev_role, 2, 0),
 	SHELL_CMD_ARG(twin, NULL, "elev twin <on|off> (PC Digital Twin telemetry)", cmd_elev_twin, 2, 0),

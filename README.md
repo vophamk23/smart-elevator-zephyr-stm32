@@ -1,4 +1,4 @@
-# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY THÔNG MINH 7 TẦNG AN TOÀN TRỌNG YẾU THỜI GIAN THỰC TRÊN NỀN TẢNG ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
+# HỆ THỐNG ĐIỀU KHIỂN THANG MÁY 7 TẦNG TRỌNG YẾU THỜI GIAN THỰC TRÊN NỀN TẢNG ZEPHYR RTOS VÀ KIT BKIT ARM4 (STM32F407ZGT6)
 
 <p align="center">
   <img src="https://img.shields.io/badge/RTOS-Zephyr%20RTOS%20v4.4.0-007ACC?style=for-the-badge&logo=zephyrproject&logoColor=white" alt="Zephyr RTOS"/>
@@ -297,17 +297,19 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 | **Báo cháy Khẩn cấp**      |   `F E 1`   | Nhấp nháy chữ `FE` (Fire Evacuation) chỉ dẫn chạy sơ tán về Tầng 1.                                                   |
 | **Dừng Khẩn / Sự cố Lỗi**  |   `E r r`   | Khóa cứng chữ `Err` cảnh báo cho kỹ thuật viên.                                                                       |
 
-### 6.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1)
+### 6.3. Bảng Ma trận 16 Phím bấm (74HC165 qua SPI1 — Khớp chữ in trên mạch BKIT ARM4)
 
-|      Mã Phím      |              Vị trí Ma trận               | Chức năng Điều khiển              | Phản hồi Hệ thống                                                        |
-| :---------------: | :---------------------------------------: | :-------------------------------- | :----------------------------------------------------------------------- |
-|  **Phím 0 .. 6**  | Hàng 0, Cột 0 $\rightarrow$ Hàng 1, Cột 2 | **Gọi Tầng 1 đến Tầng 7 (Cabin)** | Còi chíp ngắn, ô số trên LCD sáng vàng, thang xếp lịch di chuyển.        |
-|    **Phím 7**     |               Hàng 1, Cột 3               | **Mở cửa nhanh (Door Open)**      | Cửa đang đóng dở lập tức mở toang ngược lại $100\%$.                     |
-|    **Phím 8**     |               Hàng 2, Cột 0               | **Đóng cửa nhanh (Door Close)**   | Rút ngắn thời gian chờ, đóng cửa ngay lập tức để tiết kiệm điện.         |
-|    **Phím 9**     |               Hàng 2, Cột 1               | **Giả lập Kẹt cửa (Opto X0)**     | Bơm sự cố vật cản: cửa mở lại, LCD hiện cảnh báo vàng.                   |
-|    **Phím 10**    |               Hàng 2, Cột 2               | **Giả lập Báo cháy (62°C)**       | Còi hú, LCD đỏ rực, hủy mọi lệnh gọi, thang chạy thẳng về Tầng 1 mở cửa. |
-|    **Phím 11**    |               Hàng 2, Cột 3               | **Nút Dừng Khẩn Cấp (E-Stop)**    | Cắt nguồn mô-tơ tức thời, khóa cứng hệ thống, LED hiện `Err`.            |
-| **Phím 12 .. 15** |              Toàn bộ Hàng 3               | **Giải trừ Lỗi / Reset Hệ thống** | Xóa chốt lỗi an toàn, đưa hệ thống trở lại trạng thái sẵn sàng.          |
+| Nhãn in trên Phím | Mã Quét (`key_idx`) |   Vị trí Ma trận 4×4    | Chức năng Điều khiển              | Phản hồi Hệ thống                                                        |
+| :---------------: | :-----------------: | :---------------------: | :-------------------------------- | :----------------------------------------------------------------------- |
+| **`[1]` .. `[3]`** |   `0`, `1`, `2`     |   Hàng 0, Cột 0 .. 2    | **Gọi Tầng 1, Tầng 2, Tầng 3**    | Còi chíp ngắn, ô `[1]..[3]` trên LCD sáng vàng, thang xếp lịch di chuyển. |
+|     **`[▲]`**      |         `3`         |     Hàng 0, Cột 3       | **Mở cửa nhanh (Door Open)**      | Cửa đang đóng dở lập tức mở toang ngược lại $100\%$.                     |
+| **`[4]` .. `[6]`** |   `4`, `5`, `6`     |   Hàng 1, Cột 0 .. 2    | **Gọi Tầng 4, Tầng 5, Tầng 6**    | Còi chíp ngắn, ô `[4]..[6]` trên LCD sáng vàng, thang xếp lịch di chuyển. |
+|     **`[▼]`**      |         `7`         |     Hàng 1, Cột 3       | **Đóng cửa nhanh (Door Close)**   | Rút ngắn thời gian chờ $1.8\text{ s}$, khép cửa ngay lập tức.            |
+|     **`[7]`**      |         `8`         |     Hàng 2, Cột 0       | **Gọi Tầng 7 (Tầng đỉnh)**        | Còi chíp ngắn, ô `[7]` trên LCD sáng vàng, thang xếp lịch lên Tầng 7.     |
+|     **`[8]`**      |         `9`         |     Hàng 2, Cột 1       | **Giả lập Kẹt cửa (Opto X0)**     | Bơm sự cố vật cản: cửa mở lại, LCD hiện cảnh báo vàng cam.               |
+|     **`[9]`**      |        `10`         |     Hàng 2, Cột 2       | **Giả lập Báo cháy (62°C)**       | Còi hú, LCD đỏ rực, hủy mọi lệnh gọi, thang chạy thẳng về Tầng 1 mở cửa. |
+|     **`[▶]`**      |        `11`         |     Hàng 2, Cột 3       | **Nút Dừng Khẩn Cấp (E-Stop)**    | Cắt nguồn mô-tơ tức thời, khóa cứng hệ thống, LED hiện `Err`.            |
+| **`[E] [0] [B] [◀]`** |   `12 .. 15`     |    Toàn bộ Hàng 3       | **Giải trừ Lỗi / Reset Hệ thống** | Xóa chốt lỗi an toàn & HIL Override, đưa hệ thống về trạng thái sẵn sàng. |
 
 ---
 
@@ -344,20 +346,18 @@ Màn hình TFT-LCD được điều khiển trực tiếp bằng chip **ILI9341*
 
 ## 8. Bảng Ticker 9 Kịch bản Kiểm thử & Demo Thực nghiệm trên Bo mạch
 
-Tài liệu Word chi tiết: [Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.docx](../Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.docx).
-
 ### 8.1. Bảng Ticker Tổng hợp Kiểm thử Thực tế (`[ ] KB-01` .. `[ ] KB-09`)
 
 |     Ticker      | Tên Kịch bản & Mục tiêu                     | Thao tác trên Phần cứng / Bàn phím                                                                                                   | Hiện tượng Quan sát trên Bo mạch                                                                                                                                                                                                        | Kết quả Đạt chuẩn                                                  |
 | :-------------: | :------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
 | **`[ ] KB-01`** | **Khởi động & Tự kiểm tra hệ thống (POST)** | Nhấn nút đen **RESET (RST)** trên bo mạch BKIT ARM4.                                                                                 | Còi Buzzer phát hồi chuông "Bính... Boong"; LED `PE4` nháy $800\text{ ms}$; LED 7 đoạn hiện `F - 1`; LCD bật Dashboard 4 khối, RTC chạy giây, rèm quang `CLEAR`.                                                                        | Vượt qua bài tự kiểm tra 11 bước của hàm `main()`.                 |
-| **`[ ] KB-02`** | **Gọi tầng đơn lẻ & Hiệu ứng cuộn tầng**    | Bấm **Phím 3** trên bàn phím (Gọi lên **Tầng 4**).                                                                                   | Ô `[4]` trên LCD sáng vàng, dòng Target hiện `Target Floor: 4`. LED `Y0` bật sáng (mô-tơ lên). LED 7 đoạn hiện `UP 1..4` với vạch cuộn động. LCD cuộn số trượt dọc. Đến nơi còi reo, cửa mở `OP 4` $100\%$, tự đóng sau $1.8\text{ s}$. | Chuyển tầng êm ái, hiển thị số tầng đồng bộ.                       |
-| **`[ ] KB-03`** | **Gom khách LOOK/SCAN khi gọi nhiều tầng**  | Thang ở Tầng 1. Bấm liên tiếp **Phím 2** (F3), **Phím 5** (F6). Đang chạy bấm thêm **Phím 3** (F4) và **Phím 0** (F1 - ngược chiều). | LCD sáng vàng các ô `[1]`, `[3]`, `[4]`, `[6]`. Thang dừng đón F3, chạy tiếp đón F4, lên F6 trả khách. **Tuyệt đối không quay đầu về F1 giữa chừng**. Khi xong F6, thang tự đảo chiều xuống F1 đón khách.                               | Đạt chuẩn thuật toán LOOK hai chiều tránh lãng phí hành trình.     |
-| **`[ ] KB-04`** | **Nút Đóng / Mở cửa nhanh (Phím 7 & 8)**    | Cửa đang đóng dở $\rightarrow$ Bấm **Phím 7**.<br>Cửa đang mở chờ khách $\rightarrow$ Bấm **Phím 8**.                                | Bấm Phím 7: Cửa lập tức đảo chiều mở toang ngược ra $100\%$.<br>Bấm Phím 8: Rút ngắn thời gian chờ $1.8\text{ s}$, cửa khép lại ngay tức thì.                                                                                           | Phản hồi nút bấm HMI nhạy bén, tiết kiệm thời gian chờ.            |
-| **`[ ] KB-05`** | **Cảm biến Rèm quang Chống kẹp cửa**        | Trong lúc cửa đang khép (`DOOR: MOVING`), lấy tay che quang trở **LDR (PC0)** hoặc bấm **Phím 9**.                                   | Cửa đang khép lập tức dừng lại và mở ngược ra $100\%$. Màn hình LCD hiện thanh cảnh báo vàng cam `DOOR: OBSTACLE! RE-OPENING`.                                                                                                          | Thời gian phản ứng rèm quang an toàn $< 50\text{ ms}$.             |
-| **`[ ] KB-06`** | **Cảm biến Quá tải Cabin (VR1)**            | Dùng tay vặn núm xoay biến trở **VR1 (PC1)** vượt mức $80\%$ ($> 800\text{ kg}$).                                                    | Còi kêu bíp bíp liên tục, LED 7 đoạn nhấp nháy chữ `FULL`, LCD bật Popup **ĐỎ RỰC** `!! OVERLOAD DETECTED !!`, khóa cứng mô-tơ không cho chạy. Vặn VR1 $< 750\text{ kg}$ tự hết lỗi.                                                    | Có cơ chế lọc trễ Hysteresis chống chập chờn ngưỡng.               |
-| **`[ ] KB-07`** | **Báo cháy Khẩn cấp & Sơ tán F1**           | Bấm **Phím 10** trên bàn phím (hoặc hơ nóng cảm biến nhiệt **LM35** vượt $55^\circ\text{C}$).                                        | Còi hú liên tục hồi dài, LED `PE4` nháy dồn $200\text{ ms}$, LED hiện `FE 1`, LCD đổi sang giao diện **ĐỎ RỰC TOÀN MÀN HÌNH**, thang hủy toàn bộ lệnh khác, lao thẳng về Tầng 1 mở toang cửa sơ tán. Bấm **Phím 12** để xóa lỗi.        | Chế độ an toàn khẩn cấp ưu tiên cao nhất trong máy trạng thái HSM. |
-| **`[ ] KB-08`** | **Phanh Dừng Khẩn Cấp (E-Stop)**            | Khi thang đang chạy, bấm **Phím 11** (hoặc kích hoạt opto ngắt ngoài `X1` chân `PA7`).                                               | Ngắt ngoài EXTI cắt nguồn mô-tơ ngay lập tức (dưới $12\ \mu\text{s}$), LED hiện `Err`, LCD hiện Popup Dừng khẩn cấp. Bấm **Phím 12** để phục hồi.                                                                                       | Thời gian đáp ứng ngắt cứng đạt chuẩn Hard Real-Time IEC 61508.    |
+| **`[ ] KB-02`** | **Gọi tầng đơn lẻ & Hiệu ứng cuộn tầng**    | Bấm nút **`[4]`** trên bàn phím (`key 4` — Gọi lên **Tầng 4**).                                                                      | Ô `[4]` trên LCD sáng vàng, dòng Target hiện `Target Floor: F4`. LED `Y0` bật sáng (mô-tơ lên). LED 7 đoạn hiện `UP 1..4` với vạch cuộn động. LCD cuộn số trượt dọc. Đến nơi còi reo, cửa mở `OP 4` $100\%$, tự đóng sau $1.8\text{ s}$. | Chuyển tầng êm ái, hiển thị số tầng đồng bộ.                       |
+| **`[ ] KB-03`** | **Gom khách LOOK/SCAN khi gọi nhiều tầng**  | Thang ở Tầng 1. Bấm liên tiếp nút **`[3]`**, **`[6]`**. Đang chạy bấm thêm nút **`[4]`** và nút **`[1]`** (ngược chiều).             | LCD sáng vàng các ô `[1]`, `[3]`, `[4]`, `[6]`. Thang dừng đón F3, chạy tiếp đón F4, lên F6 trả khách. **Tuyệt đối không quay đầu về F1 giữa chừng**. Khi xong F6, thang tự đảo chiều xuống F1 đón khách.                               | Đạt chuẩn thuật toán LOOK hai chiều tránh lãng phí hành trình.     |
+| **`[ ] KB-04`** | **Nút Đóng / Mở cửa nhanh (`[▲]` & `[▼]`)** | Cửa đang đóng dở $\rightarrow$ Bấm nút **`[▲]`** (`key 3`).<br>Cửa đang mở chờ khách $\rightarrow$ Bấm nút **`[▼]`** (`key 7`).      | Bấm `[▲]`: Cửa lập tức đảo chiều mở toang ngược ra $100\%$.<br>Bấm `[▼]`: Rút ngắn thời gian chờ $1.8\text{ s}$, cửa khép lại ngay tức thì.                                                                                             | Phản hồi nút bấm HMI nhạy bén, tiết kiệm thời gian chờ.            |
+| **`[ ] KB-05`** | **Cảm biến Rèm quang Chống kẹp cửa**        | Trong lúc cửa đang khép (`DOOR: CLOSING`), lấy tay che quang trở **LDR (PC0)** hoặc bấm nút **`[8]`** (`key 9`).                     | Cửa đang khép lập tức dừng lại và mở ngược ra $100\%$. Màn hình LCD hiện thanh cảnh báo vàng cam `DOOR: OBSTACLE! RE-OPENING`.                                                                                                          | Thời gian phản ứng rèm quang an toàn $< 50\text{ ms}$.             |
+| **`[ ] KB-06`** | **Cảm biến Quá tải Cabin (VR1 / Slider)**   | Vặn biến trở **VR1 (PC1)** (hoặc kéo thanh Tải trọng trên PC Twin) vượt $> 800\text{ kg}$.                                           | Còi kêu bíp bíp liên tục, LED 7 đoạn nhấp nháy chữ `FULL`, LCD bật Popup **ĐỎ RỰC** `!! OVERLOAD DETECTED !!`, khóa cứng mô-tơ & tự mở cửa. Hạ về $\le 750\text{ kg}$ tự hết lỗi.                                                        | Có cơ chế lọc trễ Hysteresis chống chập chờn ngưỡng.               |
+| **`[ ] KB-07`** | **Báo cháy Khẩn cấp & Sơ tán F1**           | Bấm nút **`[9]`** (`key 10`) trên bàn phím (hoặc hơ nóng cảm biến nhiệt **LM35** vượt $55^\circ\text{C}$).                           | Còi hú liên tục hồi dài, LED `PE4` nháy dồn $200\text{ ms}$, LED hiện `FE 1`, LCD đổi sang giao diện **ĐỎ RỰC**, thang hủy toàn bộ lệnh khác, lao thẳng về Tầng 1 mở toang cửa sơ tán. Bấm **`[E]`** (`key 12`) để xóa lỗi.              | Chế độ an toàn khẩn cấp ưu tiên cao nhất trong máy trạng thái HSM. |
+| **`[ ] KB-08`** | **Phanh Dừng Khẩn Cấp (E-Stop)**            | Khi thang đang chạy, bấm nút **`[▶]`** (`key 11`) (hoặc kích hoạt opto ngắt ngoài `X1` chân `PA7`).                                  | Ngắt ngoài EXTI cắt nguồn mô-tơ ngay lập tức (dưới $12\ \mu\text{s}$), LED hiện `Err`, LCD hiện Popup Dừng khẩn cấp. Bấm **`[E]`** (`key 12`) để phục hồi.                                                                              | Thời gian đáp ứng ngắt cứng đạt chuẩn Hard Real-Time IEC 61508.    |
 | **`[ ] KB-09`** | **Thử nghiệm Watchdog Chống treo code**     | Kết nối UART gõ lệnh shell: `bkit test wdt_hang`.                                                                                    | Cố tình dừng nạp watchdog (`g_wdt_freeze_test = true`). Đúng sau **2.5 giây**, chip STM32 tự động Hard Reset và khởi động lại an toàn; log ghi nhận `BB_FAULT_BOOT_WATCHDOG`.                                                           | Mạch IWDG phần cứng bảo vệ an toàn độc lập với phần mềm.           |
 
 ---
@@ -374,14 +374,14 @@ Tài liệu Word chi tiết: [Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.doc
 
 #### `[ ] KB-02`: Gọi tầng đơn lẻ & Hiệu ứng chuyển tầng mượt
 
-1. Bấm **Phím 3** trên bàn phím (Gọi lên **Tầng 4**).
-2. Ô số **[4]** trên LCD sáng vàng, dòng target hiện `Target Floor: 4`. Đèn LED `Y0` trên bo mạch bật sáng (mô-tơ chạy LÊN).
+1. Bấm nút **`[4]`** trên bàn phím (`key 4` — Gọi lên **Tầng 4**).
+2. Ô số **[4]** trên LCD sáng vàng, dòng target hiện `Target Floor: F4`. Đèn LED `Y0` trên bo mạch bật sáng (mô-tơ chạy LÊN).
 3. LED 7 đoạn chuyển `UP 1` $\rightarrow$ `UP 2` $\rightarrow$ `UP 3` $\rightarrow$ `UP 4` kèm vạch cuộn động. Màn hình LCD cuộn số trượt dọc từ 1 lên 4.
 4. Đến Tầng 4: Đèn LED `Y0` tắt, còi reo reo báo đến nơi, LED 7 đoạn hiện `OP 4`, thanh cửa mở toang $100\%$, ô [4] tắt màu vàng. Sau $1.8\text{ s}$, cửa tự đóng lại.
 
 #### `[ ] KB-03`: Gom khách thông minh khi bấm nhiều tầng cùng lúc (Thuật toán LOOK/SCAN)
 
-1. Thang đang ở Tầng 1. Bạn bấm liên tiếp: **Phím 2** (Tầng 3), **Phím 5** (Tầng 6). Trong lúc thang đang chạy từ F1 lên F3, bạn bấm tiếp **Phím 3** (Tầng 4) và **Phím 0** (Tầng 1 - nằm phía sau lưng).
+1. Thang đang ở Tầng 1. Bạn bấm liên tiếp nút **`[3]`** (Tầng 3), nút **`[6]`** (Tầng 6). Trong lúc thang đang chạy từ F1 lên F3, bạn bấm tiếp nút **`[4]`** (Tầng 4) và nút **`[1]`** (Tầng 1 - nằm phía sau lưng).
 2. LCD sáng vàng đồng loạt các ô: **`[1]`**, **`[3]`**, **`[4]`**, **`[6]`**.
 3. **Diễn biến:**
    - Thang ghé dừng ở **Tầng 3**: Mở cửa đón khách, ô [3] tắt đèn vàng.
@@ -389,31 +389,31 @@ Tài liệu Word chi tiết: [Huong_Dan_He_Thong_Va_Kich_Ban_Demo_BKIT_Nhom6.doc
    - Thang **KHÔNG BAO GIỜ quay đầu về Tầng 1 giữa chừng**! Nó tiếp tục chạy lên và ghé dừng ở **Tầng 6** (trả khách tầng đỉnh, ô [6] tắt vàng).
    - Khi đến Tầng 6, phía trên hết yêu cầu $\rightarrow$ Thang tự động **đảo chiều sang ▼ DOWN**, đèn LED `Y1` bật sáng, kéo một mạch chạy thẳng xuống **Tầng 1** đón khách!
 
-#### `[ ] KB-04`: Thử nghiệm Nút Đóng / Mở cửa nhanh (Phím 7 & Phím 8)
+#### `[ ] KB-04`: Thử nghiệm Nút Đóng / Mở cửa nhanh (`[▲]` & `[▼]`)
 
-- Khi cửa đang đóng dở ở Tầng 4: Bấm **Phím 7** $\rightarrow$ Cửa lập tức đảo chiều mở toang ra $100\%$.
-- Khi cửa đang mở đón khách: Bấm **Phím 8** $\rightarrow$ Cắt ngắn thời gian chờ $1.8\text{ s}$, cửa khép lại ngay tức thì.
+- Khi cửa đang đóng dở ở Tầng 4: Bấm nút **`[▲]`** (`key 3`) $\rightarrow$ Cửa lập tức đảo chiều mở toang ra $100\%$.
+- Khi cửa đang mở đón khách: Bấm nút **`[▼]`** (`key 7`) $\rightarrow$ Cắt ngắn thời gian chờ $1.8\text{ s}$, cửa khép lại ngay tức thì.
 
 #### `[ ] KB-05`: Thử nghiệm Cảm biến Rèm quang Chống kẹp cửa (Light Curtain)
 
-- Bấm gọi tầng bất kỳ. Trong lúc cửa đang khép lại (`DOOR: MOVING`):
-  - Lấy ngón tay **che kín cảm biến ánh sáng LDR (chân PC0)** trên mặt bo mạch (hoặc bấm **Phím 9**).
+- Bấm gọi tầng bất kỳ. Trong lúc cửa đang khép lại (`DOOR: CLOSING`):
+  - Lấy ngón tay **che kín cảm biến ánh sáng LDR (chân PC0)** trên mặt bo mạch (hoặc bấm nút **`[8]`** / `key 9`).
 - **Kết quả:** Cửa đang khép lập tức **dừng lại và mở ngược ra $100\%$**; màn hình LCD hiện thanh cảnh báo màu VÀNG CAM `DOOR: OBSTACLE! RE-OPENING`.
 
-#### `[ ] KB-06`: Thử nghiệm Cảm biến Quá tải Cabin (Biến trở VR1)
+#### `[ ] KB-06`: Thử nghiệm Cảm biến Quá tải Cabin (Biến trở VR1 / Thanh kéo PC Twin)
 
-- Dùng tay vặn núm xoay biến trở **VR1 (chân PC1)** theo chiều kim đồng hồ lên mức cao ($> 80\%$, tức $> 800\text{ kg}$).
-- **Kết quả:** Còi kêu bíp bíp liên tục, LED 7 đoạn nhấp nháy chữ **`FULL`**, LCD bật Popup **ĐỎ RỰC** `!! OVERLOAD DETECTED !!`, khóa cứng mô-tơ không cho chạy. Vặn VR1 về $< 750\text{ kg}$ hệ thống khôi phục bình thường.
+- Dùng tay vặn núm xoay biến trở **VR1 (chân PC1)** (hoặc kéo thanh Tải trọng trên phần mềm PC Twin) vượt mức $> 800\text{ kg}$.
+- **Kết quả:** Còi kêu bíp bíp liên tục, LED 7 đoạn nhấp nháy chữ **`FULL`**, LCD bật Popup **ĐỎ RỰC** `!! OVERLOAD DETECTED !!`, khóa cứng mô-tơ và tự mở cửa. Hạ về $\le 750\text{ kg}$ hệ thống khôi phục bình thường.
 
 #### `[ ] KB-07`: Thử nghiệm Báo cháy Khẩn cấp & Sơ tán về Tầng 1 (LM35)
 
-- Bấm **Phím 10** trên bàn phím (hoặc hơ nóng cảm biến nhiệt LM35 chân PC2 vượt $55^\circ\text{C}$).
-- **Kết quả:** Còi hú liên tục hồi dài, LED Debug PE4 nháy dồn dập $200\text{ ms}$, LED 7 đoạn hiện `FE 1`, LCD đổi sang giao diện **ĐỎ RỰC TOÀN MÀN HÌNH**, thang hủy toàn bộ lệnh khác tự động chạy thẳng xuống **Tầng 1** mở toang cửa sơ tán. Bấm **Phím 12** để xóa lỗi.
+- Bấm nút **`[9]`** (`key 10`) trên bàn phím (hoặc hơ nóng cảm biến nhiệt LM35 chân PC2 vượt $55^\circ\text{C}$).
+- **Kết quả:** Còi hú liên tục hồi dài, LED Debug PE4 nháy dồn dập $200\text{ ms}$, LED 7 đoạn hiện `FE 1`, LCD đổi sang giao diện **ĐỎ RỰC**, thang hủy toàn bộ lệnh khác tự động chạy thẳng xuống **Tầng 1** mở toang cửa sơ tán. Bấm nút **`[E]`** (`key 12`) để xóa lỗi.
 
 #### `[ ] KB-08`: Phanh gấp Dừng khẩn cấp (Emergency Stop)
 
-- Khi thang đang chạy, bấm **Phím 11** (hoặc kích hoạt opto X1 PA7).
-- **Kết quả:** Mô-tơ bị cắt nguồn ngay lập tức (dưới $12\ \mu\text{s}$), LED hiện `Err`, LCD hiện Popup dừng khẩn cấp. Bấm **Phím 12** để khôi phục.
+- Khi thang đang chạy, bấm nút **`[▶]`** (`key 11`) (hoặc kích hoạt opto X1 PA7).
+- **Kết quả:** Mô-tơ bị cắt nguồn ngay lập tức (dưới $12\ \mu\text{s}$), LED hiện `Err`, LCD hiện Popup dừng khẩn cấp. Bấm nút **`[E]`** (`key 12`) để khôi phục.
 
 #### `[ ] KB-09`: Thử nghiệm Bộ đếm Watchdog chống treo code (IWDG)
 
@@ -492,8 +492,8 @@ _Thông số dung lượng bộ nhớ sau khi biên dịch:_
 
 ```text
 Memory region         Used Size  Region Size  %age Used
-           FLASH:      112272 B         1 MB     10.71%
-             RAM:       28608 B       128 KB     21.83%
+           FLASH:      119944 B         1 MB     11.44%
+             RAM:       35136 B       128 KB     26.81%
 ```
 
 ### Khởi chạy Phần mềm Giám sát PC HIL Digital Twin
@@ -548,6 +548,7 @@ Kết nối cáp chuyển đổi USB-to-UART vào chân `PA9 (TX)` và `PA10 (RX
 | **`[ ] EL-06`** | `elev coverage`                      | Không có                                                                                                                                          | In ma trận đếm số lần chuyển dịch trạng thái $[9][9]$ của máy trạng thái HSM và thống kê truyền thông mạng CAN.              | In ma trận $9 \times 9$ trực quan, hiển thị các nhánh FSM đã được duyệt qua trong phiên chạy.                                                                                                      | Chứng minh độ phủ kiểm thử nhánh đạt $100\%$ khi nghiệm thu BTL.          |
 | **`[ ] EL-07`** | `elev mode <mode>`                   | `loopback`: Tự lặp nội bộ<br>`normal`: Chạy mạng thật                                                                                             | Chuyển chế độ hoạt động của bộ điều khiển `bxCAN1` giữa 1 bo mạch độc lập và 2 bo mạch liên kết.                             | Thay đổi thanh ghi `CAN_BTR` tức thì mà không cần khởi động lại vi điều khiển.                                                                                                                     | Thuận tiện chuyển đổi giữa bài test đơn lẻ và kết nối hệ thống BMS.       |
 | **`[ ] EL-08`** | `elev role <role>`                   | `cabin`: Tủ điều khiển buồng<br>`hall`: Bảng gọi tầng sảnh                                                                                        | Định vị vai trò nút mạng CAN cho bo mạch BKIT ARM4 khi đấu nối liên lạc nhiều bo mạch song song.                             | Cập nhật cấu hình bộ lọc phần cứng (Hardware Acceptance Filter) theo ID tương ứng.                                                                                                                 | Gói tin CAN lọc đúng địa chỉ, không làm quá tải CPU luồng nhận.           |
+| **`[ ] EL-09`** | `elev sensor <load\|temp\|auto> [v]` | `load <0..1000>`: Tải kg<br>`temp <deci_c>`: 0.1°C<br>`auto`: Trả về ADC thật                                                                     | Ghi đè giá trị cảm biến HIL trực tiếp từ thanh kéo phần mềm PC Digital Twin khi đang cắm cáp RS232 Live.                     | Kích hoạt đúng lọc trễ Hysteresis Quá tải (`>=800`/`<=750 kg`) và Báo cháy (`>=55`/`<=48°C`); vặn `VR1` thật tự thu hồi quyền.                                                                     | Thanh kéo cảm biến trên PC và núm xoay `VR1` thật đồng bộ hai chiều 100%. |
 
 ### 11.3. Trích xuất Đầu ra Mẫu Thực tế trên UART Terminal Console
 

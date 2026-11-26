@@ -28,4 +28,20 @@ int bsp_adc_init(void);
  */
 int bsp_adc_read_all(bkit_adc_snapshot_t *out);
 
+/**
+ * @brief Ghi đè tải trọng cabin giả lập từ PC Digital Twin / Shell HIL (`< 0` để trả về đọc biến trở VR1 thật).
+ *        Nếu người dùng xoay núm biến trở VR1 thật lệch >= 40 kg so với lúc bắt đầu ghi đè, hệ thống tự động trả quyền về VR1 thật.
+ */
+void bsp_adc_set_hil_load_override(int32_t load_kg);
+
+/**
+ * @brief Ghi đè nhiệt độ LM35 giả lập từ PC Digital Twin / Shell HIL (đơn vị 0.1 độ C; `< 0` để trả về cảm biến thật).
+ */
+void bsp_adc_set_hil_temp_override(int32_t temp_deci_c);
+
+/**
+ * @brief Xóa toàn bộ giá trị ghi đè cảm biến HIL, khôi phục đọc 100% từ ADC1 phần cứng.
+ */
+void bsp_adc_clear_hil_overrides(void);
+
 #endif /* BSP_ADC_SENSORS_H_ */

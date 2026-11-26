@@ -378,6 +378,12 @@ void can_bus_set_hil_drop(bool drop)
 	if (drop) {
 		/* Xóa token semaphore tồn đọng để watchdog đo chính xác ngưỡng timeout 2000 ms */
 		k_sem_reset(&g_can_partner_sem);
+	} else {
+		/* Khôi phục ngay token nhịp sống và xóa chốt lỗi để sẵn sàng cho các lần test liên tiếp */
+		k_mutex_lock(&g_can_state_mutex, K_FOREVER);
+		g_link_fault_latched = false;
+		k_mutex_unlock(&g_can_state_mutex);
+		k_sem_give(&g_can_partner_sem);
 	}
 }
 

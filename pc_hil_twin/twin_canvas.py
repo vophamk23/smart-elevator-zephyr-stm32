@@ -12,6 +12,7 @@ Các phương thức quan trọng nhất trong file:
   - `ElevatorShaftCanvas._update_seg7_and_badges()`: Cập nhật đồng hồ LED 7 đoạn ảo ('UP_3', 'dn_5', 'FE_4', 'Err2') và đèn Y0/Y1/X0.
 """
 
+import time
 import tkinter as tk
 from typing import Any, Dict
 
@@ -99,30 +100,45 @@ class ElevatorShaftCanvas(tk.Frame):
         return lbl
 
     def _update_seg7_and_badges(self, tel: Dict[str, Any]) -> None:
-        """Cập nhật ký tự trên đồng hồ LED 7 đoạn ảo (khớp hàm bsp_spi_7seg_render_status)."""
+        """Cập nhật ký tự trên đồng hồ LED 7 đoạn ảo (khớp 100% với hàm bsp_spi_7seg_render_status trên bo mạch)."""
         st = tel.get("st", "IDLE_CLOSED")
         fl = int(tel.get("fl", 1))
         fire = int(tel.get("fire", 0))
+        ovl = int(tel.get("ovl", 0))
         fault = int(tel.get("estop", 0)) or int(tel.get("canf", 0))
 
-        ms_now = int(tel.get("ms", 0))
+        ms_now = int(time.monotonic() * 1000)
         anim_step = (ms_now // 180) % 3
+        blink_on = ((ms_now // 250) % 2) == 0
         bars_up = ("_", "-", "¯")
         bars_dn = ("¯", "-", "_")
 
         if fire:
-            code_txt, seg_col = f"FE{bars_dn[anim_step]}{fl}", "#EF4444"
+            if fl > MIN_FLOOR:
+                code_txt = f"FE{bars_dn[anim_step]}{fl}"
+                seg_col = "#EF4444"
+            else:
+                code_txt = "FE 1"
+                seg_col = "#EF4444" if blink_on else "#7F1D1D"
         elif fault:
-            code_txt, seg_col = f"Err{fl}", "#F59E0B"
+            code_txt = f"Err{fl}"
+            seg_col = "#F59E0B" if blink_on else "#92400E"
+        elif ovl:
+            code_txt = "FULL"
+            seg_col = "#FB923C" if blink_on else "#7C2D12"
         else:
             if st == "MOVING_UP":
                 code_txt = f"UP{bars_up[anim_step]}{fl}"
+                seg_col = "#38BDF8"
             elif st == "MOVING_DOWN":
                 code_txt = f"dn{bars_dn[anim_step]}{fl}"
+                seg_col = "#F59E0B"
+            elif st in ("DOOR_OPENING", "DOOR_OPEN", "DOOR_CLOSING") or int(tel.get("door", 0)) > 0:
+                code_txt = f"OP {fl}"
+                seg_col = "#34D399"
             else:
-                prefix = STATE_META.get(st, ("", "", "F-"))[2]
-                code_txt = f"{prefix:<2} {fl}"
-            seg_col = "#34D399" if st in ("DOOR_OPEN", "IDLE_CLOSED") else "#38BDF8"
+                code_txt = f"F- {fl}"
+                seg_col = "#34D399"
 
         self.seg7_lbl.config(text=code_txt, fg=seg_col)
 

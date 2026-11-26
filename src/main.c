@@ -5,22 +5,14 @@
  * Chức năng tổng quát của file:
  *  - Khởi tạo toàn bộ trình điều khiển phần cứng (Watchdog, GPIO/EXTI, PWM, ADC, SPI1/2, I2C1, CAN1, TFT-LCD FSMC)
  *    và máy trạng thái trung tâm HSM.
- *  - Định nghĩa 7 luồng RTOS tĩnh (`K_THREAD_DEFINE`) và 3 bộ định thời (`k_timer`) điều phối toàn hệ thống.
- *
- * Các hàm quan trọng nhất trong file:
- *  - `main()`                       : Khởi tạo toàn bộ ngoại vi (kể cả TFT-LCD ILI9341), ghi bản ghi bật nguồn vào Hộp đen và kích hoạt 3 `k_timer`.
- *  - `on_hw_exti_event()`           : Callback nhận ngắt cứng EXTI (X0 kẹt cửa, X1 E-Stop), đẩy khẩn vào HSM & đánh thức T1.
- *  - `safety_thread_entry()`        : [Luồng T1 - Prio 2] Đọc 5 kênh ADC1 & 4 chân X0..X3 mỗi 100 ms, phát hiện cháy/quá tải có trễ Hysteresis.
- *  - `fsm_thread_entry()`           : [Luồng T2 - Prio 3] Chạy vòng lặp xử lý sự kiện của Máy trạng thái HSM 9 trạng thái.
- *  - `can_rx_thread_entry()`        : [Luồng T3a - Prio 4] Nhận và giải mã khung CAN từ bộ lọc phần cứng bxCAN1.
- *  - `can_tx_thread_entry()`        : [Luồng T3b - Prio 4] Phát định kỳ Heartbeat/Status CAN mỗi 250 ms & phục hồi lỗi BUS-OFF.
- *  - `can_wdt_thread_entry()`       : [Luồng T3c - Prio 4] Giám sát mất nhịp tim CAN quá 2000 ms để kích hoạt Fail-Safe.
- *  - `hmi_thread_entry()`           : [Luồng T4 - Prio 5] Quét 4 LED 7 đoạn (100 Hz), render TFT-LCD 240x320 (10 Hz), quét bàn phím 4x4 (50 ms), tắt còi PWM & nháy LED3.
- *  - `telemetry_wdt_thread_entry()` : [Luồng T5 - Prio 8] Kiểm tra 4 luồng điểm danh để nạp IWDG và xuất chuỗi JSON `$TWIN` mỗi 200 ms.
+ *  - Định nghĩa 7 luồng RTOS tĩnh (`K_THREAD_DEFINE`) và các bộ định thời (`k_timer`) điều phối toàn hệ thống.
+ *  - Tự động hiệu chuẩn mức nền ánh sáng phòng cho cảm biến rèm quang LDR (`PC0`) lúc khởi động để chống
+ *    báo giả trong phòng tối, đồng thời kích hoạt mở cửa ngược dưới 50 ms khi tay che rèm quang.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdlib.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
@@ -43,25 +35,25 @@ LOG_MODULE_REGISTER(app_main, LOG_LEVEL_INF);
 /** @brief Cờ kiểm thử HIL (`bkit test wdt_hang`) để tạm ngừng nạp IWDG có chủ đích. */
 volatile bool g_wdt_freeze_test;
 
+/** @brief Trạng thái rèm quang LDR (PC0) sau khi đã hiệu chuẩn nền ánh sáng môi trường. */
+static volatile bool g_ldr_curtain_blocked;
+
 K_SEM_DEFINE(g_safety_wakeup_sem, 0, 1);
 K_SEM_DEFINE(g_hmi_sem, 0, 1);
 K_SEM_DEFINE(g_wdt_sem, 0, 1);
 
-/** @brief Ngắt timer chu kỳ 100 ms đánh thức luồng T1 kiểm tra cảm biến an toàn. */
 static void safety_timer_isr(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);
 	k_sem_give(&g_safety_wakeup_sem);
 }
 
-/** @brief Ngắt timer chu kỳ 10 ms đánh thức luồng T4 quét ghép LED 7 đoạn và bàn phím. */
 static void hmi_timer_isr(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);
 	k_sem_give(&g_hmi_sem);
 }
 
-/** @brief Ngắt timer chu kỳ 100 ms đánh thức luồng T5 kiểm tra IWDG và xuất $TWIN. */
 static void wdt_timer_isr(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);
@@ -72,11 +64,6 @@ K_TIMER_DEFINE(g_safety_timer, safety_timer_isr, NULL);
 K_TIMER_DEFINE(g_hmi_timer, hmi_timer_isr, NULL);
 K_TIMER_DEFINE(g_wdt_timer, wdt_timer_isr, NULL);
 
-/**
- * @brief [NGUỒN 1 - CẦU NỐI NGẮT CỨNG EXTI] Được gọi từ ISR phần cứng X0 (PA6) / X1 (PA7).
- *        Bỏ trực tiếp gói sự kiện `EV_DOOR_OBSTRUCT_EXTI` hoặc `EV_ESTOP_EXTI` vào hòm thư chung
- *        của HSM thông qua `elevator_hsm_post_event(&ev)`.
- */
 static void on_hw_exti_event(elevator_ev_type_t ev_type, uint32_t isr_cycles)
 {
 	elevator_event_t ev = {
@@ -88,21 +75,8 @@ static void on_hw_exti_event(elevator_ev_type_t ev_type, uint32_t isr_cycles)
 }
 
 /* ============================================================================
- * T1: Luồng An toàn ưu tiên cao & Đọc cảm biến Analog (Priority 2)
+ * T1: Luồng An toàn ưu tiên cao & Đọc cảm biến Analog 50 ms (Priority 2)
  * ============================================================================ */
-
-/**
- * @brief Điểm vào luồng T1: thức dậy tức thời khi có ngắt EXTI hoặc mỗi 100 ms để giám sát
- *        nhiệt độ LM35 (>= 55 độ C, có trễ hysteresis) và quá tải (>= 800 kg hoặc ngõ vào X3).
- *
- * Các hàm & file được luồng T1 gọi:
- *  - `bsp_wdt_checkin()`         <- `src/bsp/bsp_watchdog.c` (điểm danh IWDG khe `WDT_MON_SAFETY`)
- *  - `can_bus_get_role()`        <- `src/comms/can_bus.c` (chỉ giám sát cảm biến trên Kit `NODE_ROLE_CABIN`)
- *  - `bsp_adc_read_all()`        <- `src/bsp/bsp_adc_sensors.c` (đọc 5 kênh ADC1: LM35, tải, ánh sáng, nguồn)
- *  - `bsp_gpio_read_inputs()`    <- `src/bsp/bsp_gpio_exti.c` (đọc trạng thái cách ly quang `X0..X3`)
- *  - `elevator_hsm_post_event()` <- `src/core/elevator_hsm.c` (gửi sự kiện cháy/quá tải sang luồng T2)
- *  - `can_bus_send_emergency()`  <- `src/comms/can_bus.c` (phát khung CAN khẩn cấp `0x080` khi quá nhiệt)
- */
 static void safety_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -112,24 +86,31 @@ static void safety_thread_entry(void *p1, void *p2, void *p3)
 	bool prev_overheat = false;
 	bool prev_overload = false;
 
+	/* Bộ hiệu chuẩn nền tự động cho quang trở LDR (PC0) tránh báo giả khi phòng tối/sáng khác nhau */
+	int32_t ldr_baseline_mv = -1;
+	uint8_t ldr_init_cnt = 0U;
+	int32_t ldr_accum_mv = 0;
+	uint32_t ldr_blocked_ticks = 0U;
+
 	while (1) {
-		/* Ngủ chờ semaphore từ timer 100 ms hoặc từ ngắt EXTI (không tốn CPU khi rảnh) */
 		(void)k_sem_take(&g_safety_wakeup_sem, K_FOREVER);
 		bsp_wdt_checkin(WDT_MON_SAFETY);
 
-		/* Chỉ bo mạch giữ vai trò CABIN (Kit 1) mới giám sát cảm biến giếng thang & tải trọng */
 		if (can_bus_get_role() != NODE_ROLE_CABIN) {
 			continue;
 		}
 
-		/*
-		 * [NGUỒN 1 - CẢM BIẾN NHIỆT LM35 THẬT TRÊN BO (PC2)]
-		 * Khi hơ nóng LM35 thật >= 55.0°C (550 deci-C) -> gửi `EV_OVERHEAT_TEMP` vào hòm thư HSM.
-		 * Khi LM35 nguội về <= 48.0°C (480 deci-C) -> tự động gửi `EV_TEMP_NORMAL` giải trừ cháy.
-		 */
+		elevator_telemetry_t tel;
+		elevator_hsm_get_telemetry(&tel);
+
+		/* Đồng bộ trạng thái trễ với cờ thực tế của HSM (phòng trường hợp vừa bấm Xóa lỗi / Tiêm lỗi) */
+		prev_overheat = tel.fire_active;
+		prev_overload = tel.overload_active;
+
 		bkit_adc_snapshot_t adc = { 0 };
 		bool adc_ok = (bsp_adc_read_all(&adc) == 0 && adc.raw_ok);
 
+		/* 1. Giám sát nhiệt độ giếng thang LM35 (PC2) có trễ Hysteresis (>= 55.0 C bật, <= 48.0 C tắt) */
 		if (adc_ok) {
 			if (!prev_overheat && adc.temp_deci_c >= ELEV_TEMP_FIRE_THRESH_DC) {
 				prev_overheat = true;
@@ -146,11 +127,7 @@ static void safety_thread_entry(void *p1, void *p2, void *p3)
 			}
 		}
 
-		/*
-		 * [NGUỒN 1 - BIẾN TRỞ TẢI VR1 THẬT (PC1) & NGÕ VÀO QUANG X3 (PC5)]
-		 * Khi vặn biến trở VR1 thật >= 800 kg (hoặc kích X3) -> gửi `EV_OVERLOAD_SET` vào hòm thư HSM.
-		 * Khi vặn giảm VR1 về <= 750 kg (Hysteresis) và X3 nhả -> tự động gửi `EV_OVERLOAD_CLEAR`.
-		 */
+		/* 2. Giám sát quá tải cabin VR1 (PC1) & Opto X3 (PC5) có trễ Hysteresis (>= 800 kg / <= 750 kg) */
 		bool x0 = false, x1 = false, x2 = false, x3 = false;
 		bsp_gpio_read_inputs(&x0, &x1, &x2, &x3);
 
@@ -172,21 +149,56 @@ static void safety_thread_entry(void *p1, void *p2, void *p3)
 				(void)elevator_hsm_post_event(&ev);
 			}
 		}
+
+		/* 3. Giám sát Rèm quang chống kẹp cửa LDR (PC0) tự hiệu chuẩn nền môi trường (< 50 ms) */
+		if (adc_ok) {
+			int32_t cur_mv = (int32_t)adc.light_mv;
+			if (ldr_baseline_mv < 0) {
+				ldr_accum_mv += cur_mv;
+				ldr_init_cnt++;
+				if (ldr_init_cnt >= 4U) {
+					ldr_baseline_mv = ldr_accum_mv / 4;
+				}
+			} else {
+				int32_t diff = abs(cur_mv - ldr_baseline_mv);
+				if (!g_ldr_curtain_blocked) {
+					if (diff >= 380) {
+						g_ldr_curtain_blocked = true;
+						ldr_blocked_ticks = 0U;
+					} else if (diff < 120) {
+						/* Bám chậm theo độ trôi ánh sáng tự nhiên của phòng */
+						ldr_baseline_mv = (ldr_baseline_mv * 31 + cur_mv) / 32;
+					}
+				} else {
+					ldr_blocked_ticks++;
+					if (diff <= 220) {
+						g_ldr_curtain_blocked = false;
+						ldr_blocked_ticks = 0U;
+					} else if (ldr_blocked_ticks >= 160U) {
+						/* Nếu môi trường đổi độ sáng cố định > 8 giây -> cập nhật lại nền mới */
+						ldr_baseline_mv = cur_mv;
+						g_ldr_curtain_blocked = false;
+						ldr_blocked_ticks = 0U;
+					}
+				}
+			}
+
+			/* Nếu cửa đang khép mà rèm quang LDR hoặc X0 bị che -> mở cửa ngược lại ngay lập tức! */
+			if ((g_ldr_curtain_blocked || x0) &&
+			    (tel.state == HSM_STATE_DOOR_CLOSING || tel.state == HSM_STATE_DOOR_OPEN)) {
+				elevator_event_t ev = {
+					.type = EV_DOOR_OBSTRUCT_EXTI,
+					.isr_cycles = k_cycle_get_32(),
+				};
+				(void)elevator_hsm_post_event(&ev);
+			}
+		}
 	}
 }
 
 /* ============================================================================
  * T2: Luồng Điều khiển Máy trạng thái HSM & Lập lịch SCAN/LOOK (Priority 3)
  * ============================================================================ */
-
-/**
- * @brief Điểm vào luồng T2: điểm danh watchdog rồi chờ sự kiện trên hàng đợi HSM (`K_FOREVER`).
- *
- * Các hàm & file được luồng T2 gọi:
- *  - `bsp_wdt_checkin()`   <- `src/bsp/bsp_watchdog.c` (điểm danh khe `WDT_MON_FSM`)
- *  - `elevator_hsm_step()` <- `src/core/elevator_hsm.c` (xử lý toàn bộ máy trạng thái HSM; bên trong hàm này
- *                             sẽ gọi tiếp `elevator_scheduler.c`, `bsp_gpio_exti.c`, `bsp_pwm_buzzer.c` và `bsp_i2c_storage.c`)
- */
 static void fsm_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -202,14 +214,6 @@ static void fsm_thread_entry(void *p1, void *p2, void *p3)
 /* ============================================================================
  * T3a/b/c: Nhóm 3 luồng Truyền thông CAN1 hướng sự kiện (RX / TX / Partner Watchdog)
  * ============================================================================ */
-
-/**
- * @brief Điểm vào luồng T3a: chặn nhận và giải mã mọi khung CAN hợp lệ đến từ bộ lọc phần cứng.
- *
- * Các hàm & file được luồng T3a gọi:
- *  - `can_bus_rx_step()` <- `src/comms/can_bus.c` (đọc `g_can_rx_msgq`, trả `RTR`, đẩy lệnh sang `elevator_hsm.c`
- *                           và nhả `g_can_partner_sem` cho luồng T3c)
- */
 static void can_rx_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -221,14 +225,6 @@ static void can_rx_thread_entry(void *p1, void *p2, void *p3)
 	}
 }
 
-/**
- * @brief Điểm vào luồng T3b: phát định kỳ Heartbeat/Status 250 ms và giám sát phục hồi BUS-OFF.
- *
- * Các hàm & file được luồng T3b gọi:
- *  - `bsp_wdt_checkin()`              <- `src/bsp/bsp_watchdog.c` (điểm danh khe `WDT_MON_CAN`)
- *  - `elevator_hsm_get_telemetry()`   <- `src/core/elevator_hsm.c` (lấy ảnh chụp trạng thái cabin hiện tại)
- *  - `can_bus_tx_and_recover_step()`  <- `src/comms/can_bus.c` (chờ timer 250 ms, gửi CAN `0x200`/`0x300` & khôi phục BUS-OFF)
- */
 static void can_tx_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -236,20 +232,13 @@ static void can_tx_thread_entry(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p3);
 
 	while (1) {
-		bsp_wdt_checkin(WDT_MON_CAN);
 		elevator_telemetry_t tel;
 		elevator_hsm_get_telemetry(&tel);
+		bsp_wdt_checkin(WDT_MON_CAN);
 		can_bus_tx_and_recover_step(&tel);
 	}
 }
 
-/**
- * @brief Điểm vào luồng T3c: giám sát watchdog nút đối tác CAN ngưỡng 2000 ms (bắt timeout `-EAGAIN`).
- *
- * Các hàm & file được luồng T3c gọi:
- *  - `can_bus_partner_watchdog_step()` <- `src/comms/can_bus.c` (nếu quá 2000 ms không nhận khung CAN mới,
- *                                         tự động gửi sự kiện `EV_CAN_LINK_LOST` sang `elevator_hsm.c`)
- */
 static void can_wdt_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -262,25 +251,8 @@ static void can_wdt_thread_entry(void *p1, void *p2, void *p3)
 }
 
 /* ============================================================================
- * T4: Luồng HMI dùng chung SPI1 (7-Đoạn + Bàn phím), Còi PF8 & LED PE4 (Prio 5)
+ * T4: Luồng Giao diện HMI (LED 7 đoạn + TFT-LCD + Bàn phím 4x4 + Còi PWM + LED3) (Priority 5)
  * ============================================================================ */
-
-/**
- * @brief Điểm vào luồng T4: quét LED 7 đoạn (100 Hz), điều nhịp tắt còi PWM, nháy LED PE4
- *        và quét phím 4x4 mỗi 50 ms để phát cuộc gọi cabin (Kit 1) hoặc gọi tầng CAN (Kit 2).
- *
- * Các hàm & file được luồng T4 gọi:
- *  - `bsp_wdt_checkin()`               <- `src/bsp/bsp_watchdog.c` (điểm danh khe `WDT_MON_HMI`)
- *  - `elevator_hsm_get_telemetry()`    <- `src/core/elevator_hsm.c` (đọc tầng/hướng/cảnh báo tại chỗ)
- *  - `can_bus_get_role()`              <- `src/comms/can_bus.c` (phân biệt Kit `CABIN` hay Kit `HALL`)
- *  - `can_bus_get_remote_cabin_view()` <- `src/comms/can_bus.c` (lấy trạng thái cabin từ xa nếu là Kit `HALL`)
- *  - `bsp_pwm_buzzer_tick()`           <- `src/bsp/bsp_pwm_buzzer.c` (đếm ngược tự tắt còi PWM không chặn)
- *  - `bsp_spi_7seg_render_status()`    <- `src/bsp/bsp_spi_hmi.c` (xuất 74HC595 ra LED 7 đoạn qua SPI1)
- *  - `bsp_gpio_set_led_debug()`        <- `src/bsp/bsp_gpio_exti.c` (nháy LED Heartbeat PE4 theo trạng thái lỗi)
- *  - `bsp_spi_keypad_scan()`           <- `src/bsp/bsp_spi_hmi.c` (quét ma trận phím 4x4 qua SPI1)
- *  - `can_bus_send_hall_call()`        <- `src/comms/can_bus.c` (Kit `HALL` gửi lệnh gọi tầng `0x100` qua CAN)
- *  - `elevator_hsm_post_event()`       <- `src/core/elevator_hsm.c` (Kit `CABIN` đẩy `EV_CALL_CABIN` vào HSM)
- */
 static void hmi_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -288,21 +260,23 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p3);
 
 	uint32_t tick_div = 0U;
-	int prev_key = -1;
+	int prev_stable_key = -1;
+	int candidate_key = -1;
 
 	while (1) {
 		(void)k_sem_take(&g_hmi_sem, K_FOREVER);
 		bsp_wdt_checkin(WDT_MON_HMI);
 
-		elevator_telemetry_t tel;
-		elevator_hsm_get_telemetry(&tel);
-		node_role_t role = can_bus_get_role();
-
 		bsp_pwm_buzzer_tick();
 
-		/* Hiển thị trạng thái tại chỗ trên Kit 1, hoặc dữ liệu cabin phản chiếu qua CAN trên Kit 2 */
+		elevator_telemetry_t tel;
+		elevator_hsm_get_telemetry(&tel);
+
+		node_role_t role = can_bus_get_role();
 		uint8_t disp_floor = tel.current_floor;
 		elevator_dir_t disp_dir = (elevator_dir_t)tel.direction;
+		bool disp_door_open = (tel.door_pos != DOOR_POS_CLOSED);
+		bool disp_overload = tel.overload_active;
 		bool disp_fire = tel.fire_active;
 		bool disp_fault = tel.estop_active || tel.can_fault_active;
 
@@ -315,22 +289,29 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 			if (can_bus_get_remote_cabin_view(&rem_floor, &rem_dir, &rem_fire, &rem_fault)) {
 				disp_floor = rem_floor;
 				disp_dir = rem_dir;
+				disp_door_open = false;
+				disp_overload = false;
 				disp_fire = rem_fire;
 				disp_fault = rem_fault || tel.can_fault_active;
 			}
 		}
 
-		(void)bsp_spi_7seg_render_status(disp_floor, disp_dir, disp_fire, disp_fault);
+		/* Cập nhật nội dung bộ đệm 4 LED 7 đoạn mỗi 20 ms (quét phần cứng chạy riêng ở 500 Hz) */
+		if ((tick_div % 2U) == 0U) {
+			(void)bsp_spi_7seg_render_status(disp_floor, disp_dir, disp_door_open,
+							 disp_overload, disp_fire, disp_fault);
+		}
 
-		/* Cập nhật Màn hình đồ họa màu TFT-LCD 240x320 (ILI9341 - FSMC 16-bit) mỗi 100 ms */
+		/* Cập nhật Màn hình màu TFT-LCD 240x320 (ILI9341 - FSMC 16-bit) mỗi 100 ms */
 		if ((tick_div % 10U) == 0U) {
-			bkit_adc_snapshot_t adc_snap;
+			bkit_adc_snapshot_t adc_snap = { 0 };
 			(void)bsp_adc_read_all(&adc_snap);
 			float load_kg = (float)adc_snap.load_kg;
 			float temp_c = (float)adc_snap.temp_deci_c / 10.0f;
 			bool x0_door = false;
 			bsp_gpio_read_inputs(&x0_door, NULL, NULL, NULL);
-			bool curtain_blocked = x0_door || (adc_snap.light_mv > 3000U);
+			bool curtain_blocked = x0_door || g_ldr_curtain_blocked ||
+					       elevator_hsm_is_obstruct_recent(1400U);
 			uint8_t call_mask = tel.cabin_mask | tel.hall_up_mask | tel.hall_down_mask;
 
 			bsp_tft_lcd_render_dashboard(&tel, call_mask, tel.door_pct,
@@ -338,77 +319,90 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 						     elevator_state_str((elevator_state_t)tel.state));
 		}
 
-		/* Nháy nhanh LED PE4 (chu kỳ 200 ms) khi có cháy/lỗi, hoặc nháy chậm 800 ms khi bình thường */
-		uint32_t blink_period = (disp_fire || disp_fault) ? 10U : 40U;
+		/* Nháy nhanh LED PE4 (chu kỳ 200 ms) khi có cháy/lỗi/quá tải, hoặc nháy chậm 800 ms khi bình thường */
+		uint32_t blink_period = (disp_fire || disp_fault || disp_overload) ? 10U : 40U;
 		if ((tick_div % blink_period) == 0U) {
 			bsp_gpio_set_led_debug(((tick_div / blink_period) & 1U) == 0U);
 		}
 
 		/*
-		 * Quét ma trận phím 4x4 (16 phím: key 0..15) qua SPI1 mỗi 50 ms (tick_div % 5 == 0)
-		 * và khử nhấn lặp. Ánh xạ đầy đủ cả 16 phím trên bo BKIT - Arm4 để có thể test
-		 * độc lập toàn bộ tính năng ngay trên bo mạch:
-		 *  - Phím 0..6   : Gọi Tầng 1..7 (Cabin hoặc Hall CAN tùy vai trò bo mạch)
-		 *  - Phím 7      : Mở cửa nhanh (`EV_CMD_OPEN_DOOR`)
-		 *  - Phím 8      : Đóng cửa nhanh (`EV_CMD_CLOSE_DOOR`)
-		 *  - Phím 9      : Giả lập Kẹt cửa X0 (`EV_DOOR_OBSTRUCT_EXTI`)
-		 *  - Phím 10     : Giả lập Báo cháy quá nhiệt (`EV_OVERHEAT_TEMP`)
-		 *  - Phím 11     : Kích hoạt Dừng khẩn cấp E-Stop X1 (`EV_ESTOP_EXTI`)
-		 *  - Phím 12..15 : Xóa chốt lỗi & khôi phục vận hành (`EV_CLEAR_FAULT`)
+		 * Quét ma trận phím 4x4 (16 phím: key 0..15) qua SPI1 kèm lọc chống dội 2 mẫu liên tiếp,
+		 * ánh xạ ĐÚNG 100% theo chữ in lụa (Silkscreen) trên mặt bo mạch BKIT ARM4 thật:
+		 *   Hàng 0: [1](0)->Tầng 1 | [2](1)->Tầng 2 | [3](2)->Tầng 3 | [▲](3)->Mở cửa nhanh
+		 *   Hàng 1: [4](4)->Tầng 4 | [5](5)->Tầng 5 | [6](6)->Tầng 6 | [▼](7)->Đóng cửa nhanh
+		 *   Hàng 2: [7](8)->Tầng 7 | [8](9)->Kẹt cửa | [9](10)->Báo cháy | [▶](11)->E-Stop
+		 *   Hàng 3: [E](12), [0](13), [B](14), [◀](15) -> Giải trừ lỗi / Khôi phục vận hành
 		 */
-		if ((tick_div % 5U) == 0U) {
-			int key = -1;
-			if (bsp_spi_keypad_scan(&key, NULL) == 0 && key >= 0 && key != prev_key) {
-				LOG_INF("Keypad 4x4 pressed: key_idx=%d", key);
-				if (key < ELEV_NUM_FLOORS) {
-					uint8_t floor = (uint8_t)(key + 1);
-					bsp_pwm_buzzer_beep(2400U, 35U);
-					if (role == NODE_ROLE_HALL) {
-						/* Tầng đỉnh (F7) chỉ có chiều gọi Xuống; các tầng 1..6 mặc định gọi Lên */
-						bool going_up = (floor < ELEV_MAX_FLOOR);
-						(void)can_bus_send_hall_call(floor, going_up);
-					} else {
-						elevator_event_t ev = {
-							.type = EV_CALL_CABIN,
-							.floor = floor,
-						};
-						(void)elevator_hsm_post_event(&ev);
+		if ((tick_div % 3U) == 0U) {
+			static const int8_t k_key_to_floor[16] = {
+				1,  2,  3, -1, /* Hàng 0: [1], [2], [3], [▲] */
+				4,  5,  6, -1, /* Hàng 1: [4], [5], [6], [▼] */
+				7, -1, -1, -1, /* Hàng 2: [7], [8], [9], [▶] */
+			       -1, -1, -1, -1  /* Hàng 3: [E], [0], [B], [◀] */
+			};
+			int raw_key = -1;
+			if (bsp_spi_keypad_scan(&raw_key, NULL) == 0) {
+				if (raw_key == candidate_key) {
+					if (raw_key >= 0 && raw_key < 16 && raw_key != prev_stable_key) {
+						int8_t mapped_floor = k_key_to_floor[raw_key];
+						LOG_INF("Keypad 4x4 pressed: key_idx=%d (floor=%d)",
+							raw_key, mapped_floor);
+						if (mapped_floor >= ELEV_MIN_FLOOR &&
+						    mapped_floor <= ELEV_MAX_FLOOR) {
+							uint8_t floor = (uint8_t)mapped_floor;
+							bsp_pwm_buzzer_beep(2400U, 35U);
+							if (role == NODE_ROLE_HALL) {
+								bool going_up = (floor < ELEV_MAX_FLOOR);
+								(void)can_bus_send_hall_call(floor, going_up);
+							} else {
+								elevator_event_t ev = {
+									.type = EV_CALL_CABIN,
+									.floor = floor,
+								};
+								(void)elevator_hsm_post_event(&ev);
+							}
+						} else if (raw_key == 3) { /* Nút [▲]: Mở cửa nhanh */
+							bsp_pwm_buzzer_beep(2200U, 40U);
+							elevator_event_t ev = { .type = EV_CMD_OPEN_DOOR };
+							(void)elevator_hsm_post_event(&ev);
+						} else if (raw_key == 7) { /* Nút [▼]: Đóng cửa nhanh */
+							bsp_pwm_buzzer_beep(1800U, 40U);
+							elevator_event_t ev = { .type = EV_CMD_CLOSE_DOOR };
+							(void)elevator_hsm_post_event(&ev);
+						} else if (raw_key == 9) { /* Nút [8]: Giả lập Kẹt cửa */
+							elevator_event_t ev = {
+								.type = EV_DOOR_OBSTRUCT_EXTI,
+								.isr_cycles = k_cycle_get_32(),
+							};
+							(void)elevator_hsm_post_event(&ev);
+						} else if (raw_key == 10) { /* Nút [9]: Giả lập Báo cháy 62°C */
+							bsp_adc_set_hil_temp_override(620);
+							elevator_event_t ev = {
+								.type = EV_OVERHEAT_TEMP,
+								.param = 620U,
+							};
+							(void)elevator_hsm_post_event(&ev);
+							(void)can_bus_send_emergency(1U, 0U);
+						} else if (raw_key == 11) { /* Nút [▶]: Dừng khẩn cấp E-Stop */
+							bsp_gpio_set_motor_outputs(false, false);
+							elevator_event_t ev = {
+								.type = EV_ESTOP_EXTI,
+								.isr_cycles = k_cycle_get_32(),
+							};
+							(void)elevator_hsm_post_event(&ev);
+						} else { /* Hàng 3 [E], [0], [B], [◀]: Xóa lỗi */
+							bsp_pwm_buzzer_beep(2600U, 45U);
+							can_bus_set_hil_drop(false);
+							bsp_adc_clear_hil_overrides();
+							elevator_event_t ev = { .type = EV_CLEAR_FAULT };
+							(void)elevator_hsm_post_event(&ev);
+						}
 					}
-				} else if (key == 7) {
-					bsp_pwm_buzzer_beep(2200U, 40U);
-					elevator_event_t ev = { .type = EV_CMD_OPEN_DOOR };
-					(void)elevator_hsm_post_event(&ev);
-				} else if (key == 8) {
-					bsp_pwm_buzzer_beep(1800U, 40U);
-					elevator_event_t ev = { .type = EV_CMD_CLOSE_DOOR };
-					(void)elevator_hsm_post_event(&ev);
-				} else if (key == 9) {
-					elevator_event_t ev = {
-						.type = EV_DOOR_OBSTRUCT_EXTI,
-						.isr_cycles = k_cycle_get_32(),
-					};
-					(void)elevator_hsm_post_event(&ev);
-				} else if (key == 10) {
-					elevator_event_t ev = {
-						.type = EV_OVERHEAT_TEMP,
-						.param = 620U,
-					};
-					(void)elevator_hsm_post_event(&ev);
-					(void)can_bus_send_emergency(1U, 0U);
-				} else if (key == 11) {
-					elevator_event_t ev = {
-						.type = EV_ESTOP_EXTI,
-						.isr_cycles = k_cycle_get_32(),
-					};
-					(void)elevator_hsm_post_event(&ev);
+					prev_stable_key = raw_key;
 				} else {
-					bsp_pwm_buzzer_beep(2600U, 45U);
-					can_bus_set_hil_drop(false);
-					elevator_event_t ev = { .type = EV_CLEAR_FAULT };
-					(void)elevator_hsm_post_event(&ev);
+					candidate_key = raw_key;
 				}
 			}
-			prev_key = key;
 		}
 
 		tick_div++;
@@ -416,17 +410,8 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 }
 
 /* ============================================================================
- * T5: Luồng giám sát IWDG đa luồng & Xuất gói $TWIN JSON (Priority 8 - Thấp nhất)
+ * T5: Luồng giám sát IWDG đa luồng & Xuất gói $TWIN JSON (Priority 8)
  * ============================================================================ */
-
-/**
- * @brief Điểm vào luồng T5: kiểm tra check-in sống của các luồng để nạp IWDG và phát `$TWIN` mỗi 200 ms.
- *
- * Các hàm & file được luồng T5 gọi:
- *  - `bsp_wdt_service()`          <- `src/bsp/bsp_watchdog.c` (chỉ nạp IWDG khi mọi luồng chưa treo > 1500 ms)
- *  - `twin_telemetry_is_enabled()`<- `src/comms/twin_telemetry.c` (kiểm tra cờ cho phép xuất chuỗi `$TWIN`)
- *  - `twin_telemetry_emit_now()`  <- `src/comms/twin_telemetry.c` (đóng gói JSON trạng thái gửi UART cho PC Twin)
- */
 static void telemetry_wdt_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -438,7 +423,6 @@ static void telemetry_wdt_thread_entry(void *p1, void *p2, void *p3)
 	while (1) {
 		(void)k_sem_take(&g_wdt_sem, K_FOREVER);
 
-		/* Chỉ nạp IWDG khi mọi luồng giám sát còn điểm danh hợp lệ trong ngưỡng 1500 ms */
 		(void)bsp_wdt_service(g_wdt_freeze_test);
 
 		if (twin_telemetry_is_enabled() && (loop_cnt % 2U) == 0U) {
@@ -449,28 +433,15 @@ static void telemetry_wdt_thread_entry(void *p1, void *p2, void *p3)
 	}
 }
 
-/* Khởi tạo tĩnh toàn bộ 7 luồng RTOS lúc biên dịch (không cấp phát bộ nhớ động heap) */
-K_THREAD_DEFINE(t1_safety,  1536, safety_thread_entry,        NULL, NULL, NULL, 2, 0, 500);
-K_THREAD_DEFINE(t2_fsm,     2048, fsm_thread_entry,           NULL, NULL, NULL, 3, 0, 500);
+/* Khởi tạo tĩnh toàn bộ 7 luồng RTOS với dung lượng Stack dư dả an toàn (< 45% tải đỉnh) */
+K_THREAD_DEFINE(t1_safety,  2048, safety_thread_entry,        NULL, NULL, NULL, 2, 0, 500);
+K_THREAD_DEFINE(t2_fsm,     2560, fsm_thread_entry,           NULL, NULL, NULL, 3, 0, 500);
 K_THREAD_DEFINE(t3_can_rx,  1536, can_rx_thread_entry,        NULL, NULL, NULL, 4, 0, 500);
 K_THREAD_DEFINE(t3_can_tx,  1536, can_tx_thread_entry,        NULL, NULL, NULL, 4, 0, 500);
 K_THREAD_DEFINE(t3_can_wdt, 1024, can_wdt_thread_entry,       NULL, NULL, NULL, 4, 0, 500);
-K_THREAD_DEFINE(t4_hmi,     1536, hmi_thread_entry,           NULL, NULL, NULL, 5, 0, 500);
-K_THREAD_DEFINE(t5_wdt,     1536, telemetry_wdt_thread_entry, NULL, NULL, NULL, 8, 0, 500);
+K_THREAD_DEFINE(t4_hmi,     4096, hmi_thread_entry,           NULL, NULL, NULL, 5, 0, 500);
+K_THREAD_DEFINE(t5_wdt,     2048, telemetry_wdt_thread_entry, NULL, NULL, NULL, 8, 0, 500);
 
-/**
- * @brief Hàm khởi động chính của hệ thống: khởi tạo toàn bộ ngoại vi, lõi HSM/CAN, ghi hộp đen lúc bật nguồn và chạy các `k_timer`.
- *
- * Thứ tự gọi khởi tạo sang các file:
- *  - `bsp_watchdog_init()`, `bsp_wdt_was_reset_cause()` <- `src/bsp/bsp_watchdog.c`
- *  - `bsp_gpio_exti_init()`                             <- `src/bsp/bsp_gpio_exti.c`
- *  - `bsp_pwm_buzzer_init()`, `bsp_pwm_buzzer_play_tone()` <- `src/bsp/bsp_pwm_buzzer.c`
- *  - `bsp_adc_init()`                                   <- `src/bsp/bsp_adc_sensors.c`
- *  - `bsp_spi_hmi_init()`                               <- `src/bsp/bsp_spi_hmi.c`
- *  - `bsp_i2c_storage_init()`, `bsp_blackbox_append()`  <- `src/bsp/bsp_i2c_storage.c`
- *  - `elevator_hsm_init()`                              <- `src/core/elevator_hsm.c`
- *  - `can_bus_init()`                                   <- `src/comms/can_bus.c`
- */
 int main(void)
 {
 	LOG_INF("Booting HCMUT BKIT ARM4 Smart Elevator Firmware (Zephyr %s)",
@@ -503,8 +474,8 @@ int main(void)
 		(void)bsp_blackbox_append(BB_FAULT_BOOT_POR, HSM_STATE_IDLE_CLOSED, 1U, 0);
 	}
 
-	/* Kích hoạt các k_timer định kỳ sau khi phần cứng và hàng đợi IPC đã sẵn sàng */
-	k_timer_start(&g_safety_timer, K_MSEC(100), K_MSEC(100));
+	/* Chạy giám sát an toàn mỗi 50 ms (< 50 ms đáp ứng rèm quang), HMI mỗi 10 ms và WDT/$TWIN mỗi 100 ms */
+	k_timer_start(&g_safety_timer, K_MSEC(50), K_MSEC(50));
 	k_timer_start(&g_hmi_timer, K_MSEC(10), K_MSEC(10));
 	k_timer_start(&g_wdt_timer, K_MSEC(100), K_MSEC(100));
 

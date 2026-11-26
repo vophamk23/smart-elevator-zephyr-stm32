@@ -50,6 +50,14 @@ class ElevatorTwinWindow:
         self.live_mode = False
         self.latest_tel: Dict[str, Any] = default_telemetry()
         self._last_sim_record_ms = 0
+        self._temp_tx_after_id = None
+        self._load_tx_after_id = None
+        self._suppress_slider_cb = False
+        self._last_user_slider_ts = 0.0
+        self._last_live_rx_ts = 0.0
+        self._last_keepalive_tx_ts = 0.0
+        self._live_pos_f = 1.0
+        self._live_door_pct = 0.0
 
         # Lưu tham chiếu các nút gọi tầng để đổi màu sáng/tắt theo bitmask hàng đợi
         self.floor_btns: Dict[Tuple[str, int], tk.Button] = {}
@@ -323,7 +331,7 @@ class ElevatorTwinWindow:
             resolution=0.5,
             orient=tk.HORIZONTAL,
             variable=self.temp_var,
-            command=self._on_sensor_slider_change,
+            command=self._on_temp_slider_change,
             bg=COLORS["bg_card_alt"],
             fg=COLORS["text_muted"],
             troughcolor="#0F172A",
@@ -342,7 +350,7 @@ class ElevatorTwinWindow:
             resolution=10,
             orient=tk.HORIZONTAL,
             variable=self.load_var,
-            command=self._on_sensor_slider_change,
+            command=self._on_load_slider_change,
             bg=COLORS["bg_card_alt"],
             fg=COLORS["text_muted"],
             troughcolor="#0F172A",
@@ -511,23 +519,34 @@ class ElevatorTwinWindow:
         """Chuyển tiếp lệnh xuống STM32 qua Serial nếu đang Live, hoặc chạy ngay trên Simulator Offline."""
         self.append_log("TX", cmd)
         if self.live_mode and self.serial.is_connected:
+            if cmd == "elev fault clear":
+                if self._temp_tx_after_id is not None:
+                    self.root.after_cancel(self._temp_tx_after_id)
+                    self._temp_tx_after_id = None
+                if self._load_tx_after_id is not None:
+                    self.root.after_cancel(self._load_tx_after_id)
+                    self._load_tx_after_id = None
+                self._sync_sensor_widgets(27.0, 150)
+            elif cmd == "elev fault fire":
+                self._sync_sensor_widgets(62.0, int(self.load_var.get()))
+            elif cmd == "elev fault overload":
+                self._sync_sensor_widgets(float(self.temp_var.get()), 920)
             self.serial.send_cmd(cmd)
         else:
             self.sim.execute_cli(cmd)
-            # Đồng bộ vị trí thanh trượt UI khi người dùng bấm nút tiêm/xóa lỗi trong Offline Sim
-            if cmd == "elev fault fire":
-                self._sync_sensor_widgets(self.sim.temp_c, self.sim.load_kg)
-            elif cmd == "elev fault overload":
-                self._sync_sensor_widgets(self.sim.temp_c, self.sim.load_kg)
-            elif cmd == "elev fault clear":
+            if cmd in ("elev fault fire", "elev fault overload", "elev fault clear"):
                 self._sync_sensor_widgets(self.sim.temp_c, self.sim.load_kg)
 
     def _sync_sensor_widgets(self, temp_c: float, load_kg: int) -> None:
-        """Đồng bộ hai thanh trượt LM35 và tải trọng theo giá trị hiện tại của Simulator."""
-        self.temp_var.set(temp_c)
-        self.load_var.set(load_kg)
-        self.temp_val_lbl.config(text=f"LM35 (PC2): {temp_c:.1f} °C")
-        self.load_val_lbl.config(text=f"Tải trọng (PC1): {load_kg} kg")
+        """Đồng bộ hai thanh trượt LM35 và tải trọng mà không kích hoạt gửi lặp lệnh Serial."""
+        self._suppress_slider_cb = True
+        try:
+            self.temp_var.set(temp_c)
+            self.load_var.set(load_kg)
+            self.temp_val_lbl.config(text=f"LM35 (PC2): {temp_c:.1f} °C")
+            self.load_val_lbl.config(text=f"Tải trọng (PC1): {load_kg} kg")
+        finally:
+            self._suppress_slider_cb = False
 
     def _on_send_manual_cmd(self) -> None:
         """Gửi lệnh người dùng tự gõ từ ô nhập liệu Shell."""
@@ -538,14 +557,45 @@ class ElevatorTwinWindow:
         if not self.live_mode and not cmd.startswith("elev "):
             self.append_log("WARN", "Lệnh `bkit ...` chỉ chạy khi đã kết nối board STM32 qua RS232.")
 
-    def _on_sensor_slider_change(self, _val: str) -> None:
-        """Cập nhật thanh kéo nhiệt độ LM35 và tải trọng cho Simulator Offline."""
+    def _flush_live_temp_override(self) -> None:
+        self._temp_tx_after_id = None
+        if self.live_mode and self.serial.is_connected:
+            deci_c = int(round(float(self.temp_var.get()) * 10.0))
+            self.dispatch_command(f"elev sensor temp {deci_c}")
+
+    def _flush_live_load_override(self) -> None:
+        self._load_tx_after_id = None
+        if self.live_mode and self.serial.is_connected:
+            load_kg = int(self.load_var.get())
+            self.dispatch_command(f"elev sensor load {load_kg}")
+
+    def _on_temp_slider_change(self, _val: str) -> None:
+        """Cập nhật thanh kéo nhiệt độ LM35 cho cả Offline Simulator lẫn Live STM32 (HIL Override)."""
         temp_c = float(self.temp_var.get())
-        load_kg = int(self.load_var.get())
         self.temp_val_lbl.config(text=f"LM35 (PC2): {temp_c:.1f} °C")
+        if self._suppress_slider_cb:
+            return
+        self._last_user_slider_ts = time.monotonic()
+        if self.live_mode and self.serial.is_connected:
+            if self._temp_tx_after_id is not None:
+                self.root.after_cancel(self._temp_tx_after_id)
+            self._temp_tx_after_id = self.root.after(120, self._flush_live_temp_override)
+        else:
+            self.sim.update_sensors(temp_c, int(self.load_var.get()))
+
+    def _on_load_slider_change(self, _val: str) -> None:
+        """Cập nhật thanh kéo tải trọng cho cả Offline Simulator lẫn Live STM32 (HIL Override)."""
+        load_kg = int(self.load_var.get())
         self.load_val_lbl.config(text=f"Tải trọng (PC1): {load_kg} kg")
-        if not self.live_mode:
-            self.sim.update_sensors(temp_c, load_kg)
+        if self._suppress_slider_cb:
+            return
+        self._last_user_slider_ts = time.monotonic()
+        if self.live_mode and self.serial.is_connected:
+            if self._load_tx_after_id is not None:
+                self.root.after_cancel(self._load_tx_after_id)
+            self._load_tx_after_id = self.root.after(120, self._flush_live_load_override)
+        else:
+            self.sim.update_sensors(float(self.temp_var.get()), load_kg)
 
     def _refresh_ports(self) -> None:
         """Quét lại danh sách cổng COM mới cắm vào máy tính."""
@@ -671,12 +721,65 @@ class ElevatorTwinWindow:
 
         # 2. Chọn nguồn telemetry tùy chế độ Live hay Offline
         if self.live_mode and self.serial.is_connected:
+            now_mono = time.monotonic()
+            got_new_packet = False
             while not self.serial.telemetry_queue.empty():
                 msg = self.serial.telemetry_queue.get_nowait()
-                # Khi nhận dữ liệu thật từ STM32 (chỉ gửi fl nguyên), đồng bộ pos_f = fl
-                msg.setdefault("pos_f", float(msg.get("fl", 1)))
                 msg.setdefault("obstruct_flash", 0)
                 self.latest_tel = msg
+                got_new_packet = True
+                self._last_live_rx_ts = now_mono
+
+            # Tự động bật lại luồng $TWIN nếu quá 1.8 giây chưa thấy gói tin (vd: vừa nhấn nút RST trên mạch hoặc cắm cáp trễ)
+            if (now_mono - self._last_live_rx_ts) > 1.8 and (now_mono - self._last_keepalive_tx_ts) > 2.0:
+                self._last_keepalive_tx_ts = now_mono
+                self.serial.send_cmd("elev twin on")
+
+            # Nội suy mượt vị trí cabin (20 FPS) khi đang chạy Live trên STM32
+            fl_int = float(self.latest_tel.get("fl", 1))
+            live_dir = int(self.latest_tel.get("dir", 0))
+            live_st = str(self.latest_tel.get("st", "IDLE_CLOSED"))
+            if live_st in ("MOVING_UP", "MOVING_DOWN") or (live_st == "FIRE_EVAC" and live_dir < 0):
+                step_f = SIM_TICK_MS / 1500.0
+                if live_dir > 0:
+                    if self._live_pos_f < fl_int or self._live_pos_f > fl_int + 1.0:
+                        self._live_pos_f = fl_int
+                    self._live_pos_f = min(float(MAX_FLOOR), fl_int + 0.94, self._live_pos_f + step_f)
+                elif live_dir < 0:
+                    if self._live_pos_f > fl_int or self._live_pos_f < fl_int - 1.0:
+                        self._live_pos_f = fl_int
+                    self._live_pos_f = max(float(MIN_FLOOR), fl_int - 0.94, self._live_pos_f - step_f)
+            else:
+                self._live_pos_f = fl_int
+            self.latest_tel["pos_f"] = self._live_pos_f
+
+            # Nội suy mượt 2 cánh cửa kính (20 FPS) khi đang chạy Live trên STM32
+            raw_door = float(self.latest_tel.get("door", 0))
+            if got_new_packet:
+                self._live_door_pct = raw_door
+            elif live_st == "DOOR_OPENING" or (
+                live_st == "FAIL_SAFE"
+                and int(self.latest_tel.get("canf", 0))
+                and not int(self.latest_tel.get("estop", 0))
+                and self._live_door_pct < 100.0
+            ):
+                self._live_door_pct = min(100.0, self._live_door_pct + (SIM_TICK_MS * 100.0 / 700.0))
+            elif live_st == "DOOR_CLOSING" or (live_st == "FIRE_EVAC" and fl_int > MIN_FLOOR and self._live_door_pct > 0):
+                self._live_door_pct = max(0.0, self._live_door_pct - (SIM_TICK_MS * 100.0 / 700.0))
+            self.latest_tel["door"] = int(round(self._live_door_pct))
+
+            # Đồng bộ ngược 2 chiều: khi xoay VR1 / hơ LM35 / bấm phím trên mạch, thanh kéo trên PC tự chạy theo!
+            if (
+                got_new_packet
+                and self._temp_tx_after_id is None
+                and self._load_tx_after_id is None
+                and (time.monotonic() - self._last_user_slider_ts) > 0.45
+            ):
+                hw_temp = round((float(self.latest_tel.get("temp", 270)) / 10.0) * 2.0) / 2.0
+                hw_load = int(round(int(self.latest_tel.get("load", 150)) / 10.0) * 10)
+                hw_temp = max(20.0, min(80.0, hw_temp))
+                hw_load = max(0, min(1000, hw_load))
+                self._sync_sensor_widgets(hw_temp, hw_load)
         else:
             self.latest_tel = self.sim.step(SIM_TICK_MS)
             # Lưu mẫu mô phỏng mỗi 200 ms (khớp chu kỳ $TWIN thật) để sẵn sàng Export CSV

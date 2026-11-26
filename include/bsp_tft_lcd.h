@@ -73,9 +73,14 @@ bool bsp_tft_lcd_is_ready(void);
 void bsp_tft_lcd_set_backlight(uint8_t brightness_pct);
 
 /**
- * @brief Xóa toàn bộ màn hình bằng một màu đơn sắc.
+ * @brief Xóa toàn bộ màn hình bằng một màu đơn sắc và đánh dấu vẽ lại toàn bộ khung nền.
  */
 void bsp_tft_lcd_clear(uint16_t color);
+
+/**
+ * @brief Đánh dấu làm mới lại toàn bộ bố cục Dashboard ở khung hình kế tiếp (dùng sau `bkit test lcd`).
+ */
+void bsp_tft_lcd_invalidate(void);
 
 /* --- Các hàm vẽ nguyên thủy (Graphics Primitives) --- */
 void bsp_tft_lcd_draw_pixel(int x, int y, uint16_t color);

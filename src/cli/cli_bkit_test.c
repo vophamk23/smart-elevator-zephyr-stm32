@@ -177,19 +177,19 @@ static int cmd_bkit_test_rtc_set(const struct shell *sh, size_t argc, char **arg
  */
 static int cmd_bkit_test_spi1(const struct shell *sh, size_t argc, char **argv)
 {
-	uint8_t pattern[4] = { 0x88U, 0x88U, 0x88U, 0x88U };
+	uint8_t pattern[4] = { 0x80U, 0x80U, 0x80U, 0x80U };
 
 	if (argc >= 2) {
 		uint8_t val = (uint8_t)strtoul(argv[1], NULL, 16);
 		memset(pattern, val, sizeof(pattern));
 	}
 
-	int err_seg = bsp_spi_7seg_write_raw(pattern);
+	bsp_spi_7seg_hold_test_pattern(pattern, 1500U);
 	int key = -1;
 	uint8_t rx[2] = { 0 };
 	int err_key = bsp_spi_keypad_scan(&key, rx);
 
-	shell_print(sh, "SPI1 7-Seg write err=%d (pattern=0x%02X)", err_seg, pattern[0]);
+	shell_print(sh, "SPI1 7-Seg pattern=0x%02X held for 1500 ms across 4 digits", pattern[0]);
 	shell_print(sh, "SPI1 Keypad scan err=%d raw=[0x%02X, 0x%02X] key=%d",
 		    err_key, rx[0], rx[1], key);
 	return 0;
@@ -277,7 +277,9 @@ static int cmd_bkit_test_lcd(const struct shell *sh, size_t argc, char **argv)
 	bsp_tft_lcd_draw_big_digit(108, 160, '7', LCD_COLOR_YELLOW, LCD_COLOR_NAVY);
 	bsp_tft_lcd_draw_string(50, 210, "BKIT TFT-LCD: PASS", LCD_COLOR_GREEN, LCD_COLOR_NAVY);
 
-	shell_print(sh, "TFT-LCD self-test passed: test patterns rendered successfully!");
+	shell_print(sh, "TFT-LCD self-test passed: holding test bars for 1500 ms...");
+	k_msleep(1500);
+	bsp_tft_lcd_invalidate();
 	return 0;
 }
 

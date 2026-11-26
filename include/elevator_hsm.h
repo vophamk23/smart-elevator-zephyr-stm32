@@ -51,6 +51,9 @@ uint32_t elevator_hsm_get_visited_state_mask(void);
  */
 void elevator_hsm_get_transition_counts(uint16_t out_matrix[HSM_STATE_COUNT][HSM_STATE_COUNT]);
 
+/** @brief Kiểm tra xem có sự kiện kẹt cửa / vật cản vừa xảy ra trong khoảng @p window_ms mili-giây gần đây không. */
+bool elevator_hsm_is_obstruct_recent(uint32_t window_ms);
+
 /** @brief Chuyển giá trị enum @ref elevator_state_t sang chuỗi ASCII ngắn gọn dễ đọc. */
 const char *elevator_state_str(elevator_state_t st);
 

@@ -78,7 +78,7 @@ static void exti_x0_handler(const struct device *port, struct gpio_callback *cb,
 
 /**
  * @brief [NGUỒN 1 - NGẮT CỨNG X1] Trình phục vụ ngắt ngoài khi chạm dây kích chân X1 (PA7 - E-Stop).
- *        Gửi sự kiện `EV_ESTOP_EXTI` qua callback `on_hw_exti_event()` vào hòm thư HSM.
+ *        Ngắt nguồn động cơ Y0/Y1 ngay tức khắc tại thanh ghi BSRR (dưới 2 us) trước khi gửi sự kiện về HSM.
  */
 static void exti_x1_handler(const struct device *port, struct gpio_callback *cb,
 			    gpio_port_pins_t pins)
@@ -86,6 +86,9 @@ static void exti_x1_handler(const struct device *port, struct gpio_callback *cb,
 	ARG_UNUSED(port);
 	ARG_UNUSED(cb);
 	ARG_UNUSED(pins);
+
+	/* Cắt cứng nguồn mô-tơ ngay trong ngữ cảnh ISR để đảm bảo chuẩn Hard Real-Time (< 12 us) */
+	bsp_gpio_set_motor_outputs(false, false);
 	dispatch_debounced_exti(&g_x1_last_ms, EV_ESTOP_EXTI);
 }
 
@@ -177,7 +180,9 @@ void bsp_gpio_set_motor_outputs(bool up_en, bool down_en)
 	if (up_en && down_en) {
 		up_en = false;
 		down_en = false;
-		LOG_ERR("SAFETY INTERLOCK: Blocked simultaneous UP+DOWN energization");
+		if (!k_is_in_isr()) {
+			LOG_ERR("SAFETY INTERLOCK: Blocked simultaneous UP+DOWN energization");
+		}
 	}
 
 	(void)gpio_pin_set_dt(&out_y0, up_en ? 1 : 0);

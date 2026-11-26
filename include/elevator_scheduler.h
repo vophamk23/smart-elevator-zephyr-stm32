@@ -29,8 +29,10 @@ void elev_sched_reset(elev_sched_queues_t *q);
  */
 bool elev_sched_add_request(elev_sched_queues_t *q, elevator_ev_type_t type, uint8_t floor);
 
-/** @brief Xóa mọi yêu cầu đang chờ tại tầng @p floor khi cabin đã tới nơi và mở cửa đón khách. */
-void elev_sched_clear_floor(elev_sched_queues_t *q, uint8_t floor);
+/**
+ * @brief Xóa yêu cầu đang chờ tại tầng @p floor theo chiều phục vụ @p served_dir khi cabin mở cửa đón khách.
+ */
+void elev_sched_clear_floor(elev_sched_queues_t *q, uint8_t floor, elevator_dir_t served_dir);
 
 /**
  * @brief Chọn tầng đích kế tiếp và hướng di chuyển dựa trên thuật toán quét hai chiều LOOK/SCAN.

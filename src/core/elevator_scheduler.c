@@ -147,8 +147,11 @@ bool elev_sched_add_request(elev_sched_queues_t *q, elevator_ev_type_t type, uin
 	}
 }
 
-/** @brief Xóa cờ yêu cầu tại tầng vừa đến cho cả nút cabin lẫn nút hành lang. */
-void elev_sched_clear_floor(elev_sched_queues_t *q, uint8_t floor)
+/**
+ * @brief Xóa cờ yêu cầu tại tầng vừa đến theo đúng chiều phục vụ hiện tại (tránh xóa nhầm khách gọi ngược chiều
+ *        khi thang chưa tới điểm quay đầu biên).
+ */
+void elev_sched_clear_floor(elev_sched_queues_t *q, uint8_t floor, elevator_dir_t served_dir)
 {
 	if (q == NULL || floor_bit(floor) == 0U) {
 		return;
@@ -156,9 +159,22 @@ void elev_sched_clear_floor(elev_sched_queues_t *q, uint8_t floor)
 
 	uint8_t clear_mask = (uint8_t)~floor_bit(floor);
 
-	q->cabin_mask     &= clear_mask;
-	q->hall_up_mask   &= clear_mask;
-	q->hall_down_mask &= clear_mask;
+	q->cabin_mask &= clear_mask;
+
+	if (served_dir == ELEV_DIR_UP) {
+		q->hall_up_mask &= clear_mask;
+		if (!has_request_above(q, floor)) {
+			q->hall_down_mask &= clear_mask;
+		}
+	} else if (served_dir == ELEV_DIR_DOWN) {
+		q->hall_down_mask &= clear_mask;
+		if (!has_request_below(q, floor)) {
+			q->hall_up_mask &= clear_mask;
+		}
+	} else {
+		q->hall_up_mask   &= clear_mask;
+		q->hall_down_mask &= clear_mask;
+	}
 }
 
 /**

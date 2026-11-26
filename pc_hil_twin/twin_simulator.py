@@ -47,6 +47,7 @@ class OfflineElevatorSimulator:
         self.pos_float = float(MIN_FLOOR)   # Vị trí liên tục (1.00 .. 7.00) để vẽ chuyển động mượt
         self.target_floor = 0
         self.direction = 0                  # 1: UP, -1: DOWN, 0: IDLE
+        self.scan_dir = 0                   # Nhớ hướng quét LOOK xuyên qua nhịp mở/đóng cửa
         self.door_pos = "CLOSED"            # CLOSED / OPENING / OPEN / CLOSING
         self.door_pct = 0
         self.phase_elapsed_ms = 0
@@ -87,22 +88,29 @@ class OfflineElevatorSimulator:
         elif next_state == "DOOR_OPEN":
             self.door_pos = "OPEN"
             self.door_pct = 100
-            self.sched.clear_floor(self.current_floor)
+            self.sched.clear_floor(self.current_floor, self.scan_dir)
         elif next_state == "DOOR_CLOSING":
             self.door_pos = "CLOSING"
         elif next_state == "MOVING_UP":
             self.direction = 1
+            self.scan_dir = 1
             self.door_pos = "CLOSED"
             self.door_pct = 0
         elif next_state == "MOVING_DOWN":
             self.direction = -1
+            self.scan_dir = -1
             self.door_pos = "CLOSED"
             self.door_pct = 0
         elif next_state == "FIRE_EVAC":
             self.sched.reset()
             self.target_floor = MIN_FLOOR
+            self.direction = 0
+            self.scan_dir = -1
+            if self.current_floor > MIN_FLOOR and self.door_pos != "CLOSED":
+                self.phase_elapsed_ms = int(((100 - self.door_pct) * DOOR_MOVE_MS) / 100)
         elif next_state == "FAIL_SAFE":
             self.direction = 0
+            self.scan_dir = 0
 
     def execute_cli(self, cmd: str) -> None:
         """
@@ -120,6 +128,10 @@ class OfflineElevatorSimulator:
             if not self.fire_active and not self.estop_active:
                 ok = self.sched.add_request(floor, ctype)
                 if ok:
+                    if self.state in ("MOVING_UP", "MOVING_DOWN"):
+                        nxt, nxt_d = self.sched.pick_next_target(self.current_floor, self.direction)
+                        if nxt and nxt_d == self.direction:
+                            self.target_floor = nxt
                     self._emit_log("SIM", f"Đã nhận cuộc gọi F{floor} ({ctype})")
 
         elif sub == "door" and len(parts) >= 3:
@@ -160,14 +172,21 @@ class OfflineElevatorSimulator:
             elif kind == "overload":
                 self.load_kg = 920
                 self.overload_active = True
-                self._emit_log("WARN", "QUÁ TẢI (>=800 kg): Khóa đóng cửa an toàn!")
+                if self.state == "IDLE_CLOSED":
+                    self._transition("DOOR_OPENING")
+                elif self.state == "DOOR_CLOSING":
+                    resume_pct = self.door_pct
+                    self._transition("DOOR_OPENING")
+                    self.phase_elapsed_ms = int((resume_pct * DOOR_MOVE_MS) / 100)
+                    self.door_pct = resume_pct
+                self._emit_log("WARN", "QUÁ TẢI (>=800 kg): Mở cửa & khóa cứng mô-tơ an toàn!")
             elif kind == "can_drop":
                 self.can_drop_injected = True
                 self.can_drop_elapsed_ms = 0
                 self._emit_log("WARN", f"Ngắt dây CAN: sẽ kích hoạt FAIL_SAFE sau {CAN_TIMEOUT_MS} ms...")
             elif kind == "estop":
                 self.estop_active = True
-                self.last_lat_us = 15
+                self.last_lat_us = 12
                 self._transition("FAIL_SAFE")
                 self._emit_log("ERR", "E-STOP (X1) KÍCH HOẠT: Cắt động cơ tức thời!")
             elif kind == "clear":
@@ -179,8 +198,25 @@ class OfflineElevatorSimulator:
                 self.can_drop_elapsed_ms = 0
                 self.temp_c = 27.0
                 self.load_kg = 150
-                self._transition("IDLE_CLOSED")
-                self._emit_log("OK", "Đã xóa toàn bộ chốt lỗi -> về IDLE_CLOSED.")
+                if self.door_pct > 0 and self.door_pos != "CLOSED":
+                    cur_pct = self.door_pct
+                    self._transition("DOOR_CLOSING")
+                    self.phase_elapsed_ms = int(((100 - cur_pct) * DOOR_MOVE_MS) / 100)
+                    self.door_pct = cur_pct
+                else:
+                    self._transition("IDLE_CLOSED")
+                self._emit_log("OK", "Đã xóa toàn bộ chốt lỗi -> khôi phục an toàn.")
+
+        elif sub == "sensor" and len(parts) >= 2:
+            if parts[2] == "auto":
+                self.update_sensors(27.0, 150)
+            elif len(parts) >= 4:
+                if parts[2] == "load":
+                    kg = self.load_kg if parts[3] == "auto" else int(parts[3])
+                    self.update_sensors(self.temp_c, kg)
+                elif parts[2] == "temp":
+                    tc = self.temp_c if parts[3] == "auto" else (float(parts[3]) / 10.0)
+                    self.update_sensors(tc, self.load_kg)
 
     def update_sensors(self, temp_c: float, load_kg: int) -> None:
         """Cập nhật giá trị cảm biến từ thanh trượt UI kèm kiểm tra hysteresis cháy & quá tải."""
@@ -201,9 +237,18 @@ class OfflineElevatorSimulator:
         # Quá tải cơ khí có ngưỡng trễ Hysteresis (bật >= 800 kg, tắt <= 750 kg)
         if not self.overload_active and load_kg >= LOAD_OVERLOAD_KG:
             self.overload_active = True
-            self._emit_log("WARN", f"Tải={load_kg} kg >= 800 kg -> Giữ cửa mở!")
+            if self.state == "IDLE_CLOSED":
+                self._transition("DOOR_OPENING")
+            elif self.state == "DOOR_CLOSING":
+                resume_pct = self.door_pct
+                self._transition("DOOR_OPENING")
+                self.phase_elapsed_ms = int((resume_pct * DOOR_MOVE_MS) / 100)
+                self.door_pct = resume_pct
+            self._emit_log("WARN", f"Tải={load_kg} kg >= 800 kg -> Mở cửa & khóa mô-tơ!")
         elif self.overload_active and load_kg <= LOAD_CLEAR_KG:
             self.overload_active = False
+            if self.state == "DOOR_OPEN":
+                self.phase_elapsed_ms = 0
             self._emit_log("OK", f"Tải={load_kg} kg <= 750 kg -> Cho phép đóng cửa.")
 
     def _step_fire_evac(self, dt_ms: int) -> None:
@@ -254,13 +299,20 @@ class OfflineElevatorSimulator:
 
         if self.state == "IDLE_CLOSED":
             self.pos_float = float(self.current_floor)
-            tgt, nxt_dir = self.sched.pick_next_target(self.current_floor, self.direction)
-            if tgt == self.current_floor and tgt != 0:
-                self.target_floor = tgt
+            if self.overload_active:
                 self._transition("DOOR_OPENING")
-            elif tgt != 0:
-                self.target_floor = tgt
-                self._transition("MOVING_UP" if nxt_dir > 0 else "MOVING_DOWN")
+            else:
+                tgt, nxt_dir = self.sched.pick_next_target(self.current_floor, self.scan_dir)
+                if tgt == 0:
+                    self.scan_dir = 0
+                    self.target_floor = 0
+                elif tgt == self.current_floor:
+                    self.target_floor = tgt
+                    self._transition("DOOR_OPENING")
+                else:
+                    self.scan_dir = nxt_dir
+                    self.target_floor = tgt
+                    self._transition("MOVING_UP" if nxt_dir > 0 else "MOVING_DOWN")
 
         elif self.state == "DOOR_OPENING":
             self.door_pct = min(100, int((self.phase_elapsed_ms * 100) / DOOR_MOVE_MS))
@@ -274,15 +326,21 @@ class OfflineElevatorSimulator:
                 self._transition("DOOR_CLOSING")
 
         elif self.state == "DOOR_CLOSING":
-            pct = int((self.phase_elapsed_ms * 100) / DOOR_MOVE_MS)
-            self.door_pct = 0 if pct >= 100 else (100 - pct)
-            if self.phase_elapsed_ms >= DOOR_MOVE_MS:
-                if self.fire_active:
-                    self._transition("FIRE_EVAC")
-                elif self.can_fault_active or self.estop_active:
-                    self._transition("FAIL_SAFE")
-                else:
-                    self._transition("IDLE_CLOSED")
+            if self.overload_active:
+                resume_pct = self.door_pct
+                self._transition("DOOR_OPENING")
+                self.phase_elapsed_ms = int((resume_pct * DOOR_MOVE_MS) / 100)
+                self.door_pct = resume_pct
+            else:
+                pct = int((self.phase_elapsed_ms * 100) / DOOR_MOVE_MS)
+                self.door_pct = 0 if pct >= 100 else (100 - pct)
+                if self.phase_elapsed_ms >= DOOR_MOVE_MS:
+                    if self.fire_active:
+                        self._transition("FIRE_EVAC")
+                    elif self.can_fault_active or self.estop_active:
+                        self._transition("FAIL_SAFE")
+                    else:
+                        self._transition("IDLE_CLOSED")
 
         elif self.state in ("MOVING_UP", "MOVING_DOWN"):
             step_dir = 1 if self.state == "MOVING_UP" else -1
@@ -308,9 +366,11 @@ class OfflineElevatorSimulator:
             self._step_fire_evac(dt_ms)
 
         elif self.state == "FAIL_SAFE":
-            if self.can_fault_active and not self.estop_active and self.door_pos == "CLOSED":
-                self.door_pos = "OPEN"
-                self.door_pct = 100
+            if self.can_fault_active and not self.estop_active and self.door_pct < 100:
+                self.door_pos = "OPENING"
+                self.door_pct = min(100, int((self.phase_elapsed_ms * 100) / DOOR_MOVE_MS))
+                if self.door_pct >= 100:
+                    self.door_pos = "OPEN"
 
         return self.snapshot()
 

@@ -69,12 +69,21 @@ class ScanLookScheduler:
             return True
         return False
 
-    def clear_floor(self, floor: int) -> None:
-        """Tắt đèn các nút gọi (cabin & hành lang) tại tầng cabin vừa dừng mở cửa."""
+    def clear_floor(self, floor: int, served_dir: int = 0) -> None:
+        """Tắt đèn các nút gọi tại tầng vừa mở cửa theo đúng chiều phục vụ hiện tại."""
         clear_mask = ~self._floor_bit(floor)
         self.cabin_mask &= clear_mask
-        self.hall_up_mask &= clear_mask
-        self.hall_down_mask &= clear_mask
+        if served_dir > 0:
+            self.hall_up_mask &= clear_mask
+            if not self.has_request_above(floor):
+                self.hall_down_mask &= clear_mask
+        elif served_dir < 0:
+            self.hall_down_mask &= clear_mask
+            if not self.has_request_below(floor):
+                self.hall_up_mask &= clear_mask
+        else:
+            self.hall_up_mask &= clear_mask
+            self.hall_down_mask &= clear_mask
 
     def _pick_upward_target(self, cur_floor: int) -> int:
         """Khi quét LÊN: ưu tiên đón người bấm cabin/lên gần nhất; hết mới đón người gọi xuống cao nhất."""

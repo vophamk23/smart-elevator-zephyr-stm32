@@ -18,12 +18,16 @@
 #include "elevator_hsm.h"
 #include "elevator_types.h"
 
+#include <stdio.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
 
 LOG_MODULE_REGISTER(twin_tx, LOG_LEVEL_INF);
 
-static volatile bool g_twin_enabled;
+/* Bật sẵn luồng $TWIN khi khởi động để cắm cáp RS232 hoặc bấm nút Reset phần cứng là PC nhận được ngay
+ * (nếu dùng PuTTY gõ lệnh tay có thể tắt bất cứ lúc nào bằng `elev twin off`). */
+static volatile bool g_twin_enabled = true;
 
 /**
  * @brief Bật hoặc tắt chế độ xuất chuỗi telemetry JSON $TWIN ra cổng nối tiếp.
@@ -61,15 +65,25 @@ void twin_telemetry_emit_now(void)
 	 *  - Bắt đầu bằng tiền tố '$TWIN,' để phần mềm Python lọc riêng dòng JSON, bỏ qua log chữ.
 	 *  - Bổ sung cm/um/dm (mặt nạ bit 7 tầng) và trips để giao diện bật đèn nút đang chờ.
 	 */
-	printk("$TWIN,{\"ms\":%u,\"st\":\"%s\",\"fl\":%u,\"tgt\":%u,"
-	       "\"dir\":%d,\"door\":%u,\"y0\":%d,\"y1\":%d,"
-	       "\"fire\":%d,\"estop\":%d,\"ovl\":%d,\"canf\":%d,"
-	       "\"temp\":%d,\"load\":%u,\"tec\":%u,\"rec\":%u,\"lat_us\":%u,"
-	       "\"cm\":%u,\"um\":%u,\"dm\":%u,\"trips\":%u}\n",
-	       tel.uptime_ms, elevator_state_str((elevator_state_t)tel.state),
-	       tel.current_floor, tel.target_floor, tel.direction, tel.door_pct,
-	       tel.motor_up, tel.motor_down, tel.fire_active, tel.estop_active,
-	       tel.overload_active, tel.can_fault_active,
-	       adc.temp_deci_c, adc.load_kg, tec, rec, tel.last_exti_latency_us,
-	       tel.cabin_mask, tel.hall_up_mask, tel.hall_down_mask, tel.trip_count);
+	char line[240];
+	int len = snprintf(line, sizeof(line),
+			   "\r\n$TWIN,{\"ms\":%u,\"st\":\"%s\",\"fl\":%u,\"tgt\":%u,"
+			   "\"dir\":%d,\"door\":%u,\"y0\":%d,\"y1\":%d,"
+			   "\"fire\":%d,\"estop\":%d,\"ovl\":%d,\"canf\":%d,"
+			   "\"temp\":%d,\"load\":%u,\"tec\":%u,\"rec\":%u,\"lat_us\":%u,"
+			   "\"cm\":%u,\"um\":%u,\"dm\":%u,\"trips\":%u,\"obstruct_flash\":%d}\r\n",
+			   tel.uptime_ms, elevator_state_str((elevator_state_t)tel.state),
+			   tel.current_floor, tel.target_floor, tel.direction, tel.door_pct,
+			   tel.motor_up, tel.motor_down, tel.fire_active, tel.estop_active,
+			   tel.overload_active, tel.can_fault_active,
+			   adc.temp_deci_c, adc.load_kg, tec, rec, tel.last_exti_latency_us,
+			   tel.cabin_mask, tel.hall_up_mask, tel.hall_down_mask, tel.trip_count,
+			   elevator_hsm_is_obstruct_recent(1200U) ? 1 : 0);
+
+	if (len > 0) {
+		/* Khóa bộ lập lịch luồng (vẫn mở ngắt phần cứng EXTI!) để không luồng Log/Shell nào chen ngang cắt đứt chuỗi JSON */
+		k_sched_lock();
+		printk("%s", line);
+		k_sched_unlock();
+	}
 }

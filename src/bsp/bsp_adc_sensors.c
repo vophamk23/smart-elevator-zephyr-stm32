@@ -40,6 +40,38 @@ static const struct adc_dt_spec adc_channels[] = {
 	DT_FOREACH_PROP_ELEM(DT_PATH(zephyr_user), io_channels, DT_SPEC_AND_COMMA_FOR_INPUTS)
 };
 
+/* Biến ghi đè cảm biến phục vụ kiểm thử HIL đồng bộ hai chiều với thanh kéo PC Digital Twin */
+static volatile int32_t g_hil_load_override_kg = -1;
+static volatile int32_t g_hil_temp_override_dc = -1;
+static volatile int32_t g_vr1_anchor_kg = -1;
+
+void bsp_adc_set_hil_load_override(int32_t load_kg)
+{
+	if (load_kg < 0) {
+		g_hil_load_override_kg = -1;
+		g_vr1_anchor_kg = -1;
+	} else {
+		g_vr1_anchor_kg = -2; /* Đánh dấu chụp lại vị trí VR1 thật ở lần đọc kế tiếp */
+		g_hil_load_override_kg = CLAMP(load_kg, 0, (int32_t)ELEV_LOAD_MAX_KG);
+	}
+}
+
+void bsp_adc_set_hil_temp_override(int32_t temp_deci_c)
+{
+	if (temp_deci_c < 0) {
+		g_hil_temp_override_dc = -1;
+	} else {
+		g_hil_temp_override_dc = CLAMP(temp_deci_c, 0, 1200);
+	}
+}
+
+void bsp_adc_clear_hil_overrides(void)
+{
+	g_hil_load_override_kg = -1;
+	g_hil_temp_override_dc = -1;
+	g_vr1_anchor_kg = -1;
+}
+
 /**
  * @brief Khởi tạo và cấu hình độ phân giải/thời gian lấy mẫu cho cả 5 kênh ADC1.
  */
@@ -105,23 +137,27 @@ int bsp_adc_read_all(bkit_adc_snapshot_t *out)
 	 * sang đơn vị vật lý của từng cảm biến tương ứng:
 	 */
 
-	/*
-	 * [0] Cảm biến nhiệt độ LM35 (Chân PC2 - ADC1_IN12, linh kiện U22):
-	 *     Theo đặc tuyến LM35: cứ tăng 1 độ C thì điện áp tăng 10 mV (1 mV = 0.1 độ C).
-	 *     Do đó giá trị `mv_vals[0]` (mV) chính bằng nhiệt độ tính theo đơn vị 0.1 độ C (deci-C).
-	 *     Ví dụ: 285 mV -> 285 (tức 28.5 độ C); >= 550 (55.0 độ C) -> Kích hoạt Báo cháy.
-	 */
-	out->temp_deci_c = mv_vals[0];
+	int32_t hw_temp_dc = mv_vals[0];
+	int32_t hw_load_kg = CLAMP((mv_vals[1] * (int32_t)ELEV_LOAD_MAX_KG) / 3300,
+				   0, (int32_t)ELEV_LOAD_MAX_KG);
 
-	/*
-	 * [1] Núm vặn Biến trở tải trọng VR1 (Chân PC1 - ADC1_IN11):
-	 *     Khi vặn biến trở từ min -> max, điện áp `mv_vals[1]` biến thiên từ 0 -> 3300 mV.
-	 *     Áp dụng quy tắc tam suất tuyến tính để quy đổi dải 0..3300 mV sang tải trọng 0..1000 kg:
-	 *         load_kg = (mv_vals[1] * 1000 kg) / 3300 mV
-	 *     Khi load_kg >= 800 kg -> Kích hoạt cảnh báo Quá tải (OVERLOAD).
-	 */
-	out->load_kg     = (uint16_t)CLAMP((mv_vals[1] * (int32_t)ELEV_LOAD_MAX_KG) / 3300,
-					   0, (int32_t)ELEV_LOAD_MAX_KG);
+	/* Nếu đang ghi đè tải trọng từ thanh trượt PC nhưng người dùng vặn biến trở VR1 thật >= 45 kg -> trả quyền về VR1 thật */
+	int32_t ovr_load = g_hil_load_override_kg;
+	if (ovr_load >= 0) {
+		int32_t anchor = g_vr1_anchor_kg;
+		if (anchor == -2) {
+			g_vr1_anchor_kg = hw_load_kg;
+		} else if (anchor >= 0 && (hw_load_kg - anchor >= 45 || anchor - hw_load_kg >= 45)) {
+			g_hil_load_override_kg = -1;
+			g_vr1_anchor_kg = -1;
+			ovr_load = -1;
+		}
+	}
+
+	int32_t ovr_temp = g_hil_temp_override_dc;
+
+	out->temp_deci_c = (ovr_temp >= 0) ? ovr_temp : hw_temp_dc;
+	out->load_kg     = (uint16_t)((ovr_load >= 0) ? ovr_load : hw_load_kg);
 
 	/*
 	 * [2] Quang trở cảm biến ánh sáng LDR (Chân PC0 - ADC1_IN10):

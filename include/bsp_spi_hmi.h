@@ -22,21 +22,29 @@
 int bsp_spi_hmi_init(void);
 
 /**
- * @brief Đẩy dữ liệu mã 7 đoạn thô lên thanh ghi dịch SPI1 để quét ghép thời gian 4 LED 7 đoạn.
- * @param digits Mảng 4 byte mã segment chung cực dương cho các chữ số 0..3.
- * @return 0 nếu truyền thành công, mã lỗi âm errno nếu lỗi bus SPI.
+ * @brief Đẩy dữ liệu mã 7 đoạn vào bộ đệm khung (framebuffer) của bộ quét ghép 500 Hz trên SPI1.
+ * @param digits Mảng 4 byte mã segment Anode chung (0 = sáng, 1 = tắt) cho các ô LED 0..3.
+ * @return 0 nếu cập nhật thành công, mã lỗi âm errno nếu lỗi tham số/thiết bị.
  */
 int bsp_spi_7seg_write_raw(const uint8_t digits[4]);
 
 /**
- * @brief Hiển thị tầng hiện tại, hướng di chuyển và mã cảnh báo ('FE' / 'Err') lên LED 7 đoạn.
- * @param floor Tầng hiện tại của thang máy (1..7).
- * @param dir   Hướng chạy (LÊN / XUỐNG / DỪNG).
- * @param fire  true nếu đang kích hoạt sơ tán hỏa hoạn ('FE').
- * @param fault true nếu đang dừng khẩn cấp E-Stop hoặc lỗi mất CAN ('Err').
+ * @brief Giữ mẫu kiểm thử cố định trên 4 LED 7 đoạn trong @p hold_ms mili-giây (phục vụ `bkit test spi1`).
+ */
+void bsp_spi_7seg_hold_test_pattern(const uint8_t digits[4], uint32_t hold_ms);
+
+/**
+ * @brief Hiển thị tầng hiện tại, trạng thái cửa, quá tải, hướng di chuyển và mã lỗi ('FE' / 'Err') lên 4 LED 7 đoạn.
+ * @param floor      Tầng hiện tại của thang máy (1..7).
+ * @param dir        Hướng chạy (LÊN / XUỐNG / DỪNG).
+ * @param door_open  true nếu cửa đang mở/đang đóng đón khách ('OP N').
+ * @param overload   true nếu buồng thang đang quá tải >= 800 kg (nhấp nháy 'FULL').
+ * @param fire       true nếu đang kích hoạt sơ tán hỏa hoạn ('FE').
+ * @param fault      true nếu đang dừng khẩn cấp E-Stop hoặc lỗi mất CAN ('Err').
  * @return 0 nếu hiển thị thành công.
  */
-int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool fire, bool fault);
+int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool door_open,
+			       bool overload, bool fire, bool fault);
 
 /**
  * @brief Kéo chốt PD3 (BTN_LOAD) và dịch đọc 16 bit trạng thái ma trận phím 4x4 qua SPI1.

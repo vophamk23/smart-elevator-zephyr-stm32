@@ -16,9 +16,12 @@ Các hàm / phương thức quan trọng nhất trong file:
 import csv
 import json
 import queue
+import re
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 try:
     import serial
@@ -41,6 +44,7 @@ class SerialBridge:
         self.hil_log_rows: List[Dict[str, Any]] = []
 
         self._ser = None
+        self._tx_lock = threading.Lock()
         self._running = False
         self._smoke_running = False
         self.port_name: str = ""
@@ -59,57 +63,79 @@ class SerialBridge:
         return ports or ["COM3"]
 
     def connect(self, port: str, baud: int = 115200) -> None:
-        """Mở kết nối RS232 và khởi chạy luồng nền đọc dữ liệu từ STM32."""
+        """Mở kết nối RS232, xóa nhiễu đệm UART và khởi chạy luồng nền đọc dữ liệu từ STM32."""
         if not HAS_SERIAL:
             raise RuntimeError("Thiếu thư viện pyserial. Hãy cài bằng lệnh: pip install pyserial")
         self.disconnect()
-        self._ser = serial.Serial(port, baud, timeout=0.2)
+        self._ser = serial.Serial(port, baud, timeout=0.2, write_timeout=0.5)
         self.port_name = port
         self._running = True
+        time.sleep(0.06)
+        try:
+            self._ser.reset_input_buffer()
+        except Exception:
+            pass
         threading.Thread(target=self._reader_loop, daemon=True).start()
         self.send_cmd("elev twin on")
 
     def disconnect(self) -> None:
         """Dừng luồng đọc nền và đóng cổng Serial an toàn."""
         self._running = False
-        if self._ser is not None:
-            try:
-                self._ser.close()
-            except Exception:
-                pass
-            self._ser = None
+        with self._tx_lock:
+            if self._ser is not None:
+                try:
+                    self._ser.close()
+                except Exception:
+                    pass
+                self._ser = None
         self.port_name = ""
 
     def send_cmd(self, cmd: str) -> bool:
-        """Gửi một chuỗi lệnh CLI xuống Zephyr Shell qua UART (kèm ký tự kết thúc dòng CRLF)."""
+        """
+        Gửi lệnh CLI xuống Zephyr Shell qua UART an toàn đa luồng:
+        Tiền tố `\\x15` (Ctrl+U) xóa sạch mọi ký tự rác còn sót trong dòng lệnh của Zephyr Shell,
+        sau đó gửi câu lệnh kết thúc bằng `\\r` để thực thi chính xác 100%.
+        """
         if not self.is_connected:
             return False
-        try:
-            self._ser.write((cmd.strip() + "\r\n").encode("utf-8"))
-            return True
-        except Exception as exc:
-            self.shell_queue.put(f"[Serial TX Error] {exc}")
+        clean_cmd = cmd.strip()
+        if not clean_cmd:
             return False
+        with self._tx_lock:
+            try:
+                if self._ser is None:
+                    return False
+                self._ser.write(("\x15" + clean_cmd + "\r").encode("utf-8"))
+                self._ser.flush()
+                return True
+            except Exception as exc:
+                self.shell_queue.put(f"[Serial TX Error] {exc}")
+                return False
 
     def _reader_loop(self) -> None:
-        """Luồng nền đọc từng dòng UART: tách gói `$TWIN,` JSON riêng với log Zephyr Shell."""
+        """Luồng nền đọc từng dòng UART: tách gói `$TWIN,` JSON kể cả khi dính cùng dòng với prompt Shell."""
         while self._running and self._ser is not None:
             try:
                 raw_bytes = self._ser.readline()
                 if not raw_bytes:
                     continue
-                line = raw_bytes.decode("utf-8", errors="ignore").strip()
-                if not line:
+                line = raw_bytes.decode("utf-8", errors="ignore")
+                clean = ANSI_ESCAPE_RE.sub("", line).strip()
+                if not clean:
                     continue
 
-                if line.startswith("$TWIN,"):
-                    payload = json.loads(line[6:])
-                    self.telemetry_queue.put(payload)
-                    self.hil_log_rows.append(payload)
-                else:
-                    # Loại bỏ mã màu ANSI (ESC[...) để in sạch vào ô Console Tkinter
-                    clean = line.replace("\x1b[1;32m", "").replace("\x1b[m", "")
-                    clean = clean.replace("\x1b[1;31m", "").replace("\x1b[1;33m", "")
+                twin_idx = clean.find("$TWIN,")
+                if twin_idx >= 0:
+                    prefix = clean[:twin_idx].strip()
+                    if prefix and prefix != "bkit-elev:~$":
+                        self.shell_queue.put(prefix)
+                    json_part = clean[twin_idx + 6 :]
+                    brace_end = json_part.rfind("}")
+                    if brace_end >= 0:
+                        payload = json.loads(json_part[: brace_end + 1])
+                        self.telemetry_queue.put(payload)
+                        self.record_sample(payload)
+                elif clean != "bkit-elev:~$":
                     self.shell_queue.put(clean)
             except Exception:
                 pass
