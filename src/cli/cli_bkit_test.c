@@ -177,7 +177,8 @@ static int cmd_bkit_test_rtc_set(const struct shell *sh, size_t argc, char **arg
  */
 static int cmd_bkit_test_spi1(const struct shell *sh, size_t argc, char **argv)
 {
-	uint8_t pattern[4] = { 0x80U, 0x80U, 0x80U, 0x80U };
+	/* 0x01 = sáng đủ 7 đoạn '8' (tắt dấu chấm dp ở bit 0) theo sơ đồ U15 BKIT ARM4 */
+	uint8_t pattern[4] = { 0x01U, 0x01U, 0x01U, 0x01U };
 
 	if (argc >= 2) {
 		uint8_t val = (uint8_t)strtoul(argv[1], NULL, 16);

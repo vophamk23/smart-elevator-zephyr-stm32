@@ -33,33 +33,50 @@ static const struct gpio_dt_spec spi2_w25q_cs  = GPIO_DT_SPEC_GET(DT_PATH(zephyr
 /* Mutex hỗ trợ kế thừa độ ưu tiên, tuần tự hóa việc xuất LED 7 đoạn & đọc phím trên SPI1 */
 K_MUTEX_DEFINE(g_spi1_bus_mutex);
 
-/* Bảng mã LED 7 đoạn Anode chung (bit = 0 là SÁNG, bit = 1 là TẮT; bit 7 = dp luôn = 1 tắt dấu chấm) */
+/*
+ * Bảng mã LED 7 đoạn Anode chung chuẩn phần cứng BKIT ARM4 (IC U15 - 74HC595):
+ *  - Thứ tự chân đấu phần cứng U15: bit 7=a, bit 6=b, bit 5=c, bit 4=d, bit 3=e, bit 2=f, bit 1=g, bit 0=dp.
+ *  - Mức 0 = SÁNG, mức 1 = TẮT; bit 0 (dp) luôn giữ = 1 để tắt dấu chấm thập phân.
+ */
 static const uint8_t seg7_digit_lut[10] = {
-	0xC0U, 0xF9U, 0xA4U, 0xB0U, 0x99U, 0x92U, 0x82U, 0xF8U, 0x80U, 0x90U
+	0x03U, 0x9FU, 0x25U, 0x0DU, 0x99U, 0x49U, 0x41U, 0x1FU, 0x01U, 0x09U
+};
+
+/*
+ * Bảng chọn Anode 4 chữ số LED 7 đoạn trên IC U14 (74HC595 thứ 2 nhận byte đầu tiên tx_buf[0]):
+ *  - Bit 0..2: LED6, LED7, LED8 rời trên mạch (giữ = 1 để tắt).
+ *  - Bit 3   : Dấu hai chấm ':' ở giữa đồng hồ (giữ = 1 để tắt).
+ *  - Bit 6   : Transistor R71 -> DIG1 (Chữ số 0 bên trái cùng)  -> 0xBF
+ *  - Bit 5   : Transistor R70 -> DIG2 (Chữ số 1 thứ hai)        -> 0xDF
+ *  - Bit 4   : Transistor R69 -> DIG3 (Chữ số 2 thứ ba)         -> 0xEF
+ *  - Bit 7   : Transistor R72 -> DIG4 (Chữ số 3 bên phải cùng)  -> 0x7F
+ */
+static const uint8_t seg7_pos_lut[4] = {
+	0xBFU, 0xDFU, 0xEFU, 0x7FU
 };
 
 #define SEG7_BLANK      0xFFU
-#define SEG7_CHAR_E     0x86U
-#define SEG7_CHAR_F     0x8EU
-#define SEG7_CHAR_L     0xC7U
-#define SEG7_CHAR_O     0xC0U
-#define SEG7_CHAR_U     0xC1U
-#define SEG7_CHAR_P     0x8CU
-#define SEG7_CHAR_D     0xA1U
-#define SEG7_CHAR_N     0xABU
-#define SEG7_CHAR_R     0xAFU
-#define SEG7_CHAR_DASH  0xBFU
+#define SEG7_CHAR_E     0x61U
+#define SEG7_CHAR_F     0x71U
+#define SEG7_CHAR_L     0xE3U
+#define SEG7_CHAR_O     0x03U
+#define SEG7_CHAR_U     0x83U
+#define SEG7_CHAR_P     0x31U
+#define SEG7_CHAR_D     0x85U
+#define SEG7_CHAR_N     0xD5U
+#define SEG7_CHAR_R     0xF5U
+#define SEG7_CHAR_DASH  0xFDU
 
 /*
- * Mã 3 thanh ngang trên 1 ô LED 7 đoạn Anode chung (bit 0 = Sáng) dùng làm hiệu ứng
- * thang máy trượt từ dưới lên trên hoặc từ trên xuống dưới ở ô LED số 2 (digits[2]):
- *  - SEG7_BAR_BOT (0xF7): Thanh ngang đáy  (đoạn d: '_')
- *  - SEG7_BAR_MID (0xBF): Thanh ngang giữa (đoạn g: '-')
- *  - SEG7_BAR_TOP (0xFE): Thanh ngang đỉnh (đoạn a: '¯')
+ * Mã 3 thanh ngang trên 1 ô LED 7 đoạn Anode chung BKIT ARM4 (bit 7=a, bit 4=d, bit 1=g; 0 = Sáng)
+ * dùng làm hiệu ứng thang máy trượt ở ô LED số 2 (digits[2]):
+ *  - SEG7_BAR_BOT (0xEF): Thanh ngang đáy  (đoạn d - bit 4 = 0: '_')
+ *  - SEG7_BAR_MID (0xFD): Thanh ngang giữa (đoạn g - bit 1 = 0: '-')
+ *  - SEG7_BAR_TOP (0x7F): Thanh ngang đỉnh (đoạn a - bit 7 = 0: '¯')
  */
-#define SEG7_BAR_BOT    0xF7U
-#define SEG7_BAR_MID    0xBFU
-#define SEG7_BAR_TOP    0xFEU
+#define SEG7_BAR_BOT    0xEFU
+#define SEG7_BAR_MID    0xFDU
+#define SEG7_BAR_TOP    0x7FU
 
 static const uint8_t seg7_scroll_up[3]   = { SEG7_BAR_BOT, SEG7_BAR_MID, SEG7_BAR_TOP };
 static const uint8_t seg7_scroll_down[3] = { SEG7_BAR_TOP, SEG7_BAR_MID, SEG7_BAR_BOT };
@@ -77,13 +94,13 @@ static uint32_t g_seg7_test_hold_until_ms;
 
 /**
  * @brief Đẩy 1 khung 16-bit ra chuỗi 2 IC 74HC595 trên bo BKIT ARM4:
- *        - Byte 0 (dịch sang IC U14 xa hơn): Mã chọn vị trí ô LED 0..3 tích cực mức THẤP `~(1 << idx)`;
- *          các bit 4..7 giữ mức 1 để tắt dấu hai chấm ':' và cụm LED6, LED7, LED8.
- *        - Byte 1 (nằm lại IC U15 gần hơn): Mã thanh đoạn `a..g, dp` Anode chung (0 = Sáng, 1 = Tắt).
+ *        - Byte 0 (dịch sang IC U14): Mặt nạ chọn vị trí ô LED `seg7_pos_lut[idx]` trên bit 4..7 (0 = Bật);
+ *          các bit 0..3 giữ mức 1 để tắt sạch LED6..8 và dấu hai chấm ':' ở giữa.
+ *        - Byte 1 (nằm lại IC U15): Mã thanh đoạn `bit 7=a .. bit 1=g, bit 0=dp` Anode chung (0 = Sáng, 1 = Tắt).
  */
 static int seg7_shift_one_digit_locked(uint8_t idx, uint8_t seg_code)
 {
-	uint8_t pos_select = (uint8_t)(~(1U << (idx & 0x03U)));
+	uint8_t pos_select = seg7_pos_lut[idx & 0x03U];
 	uint8_t tx_buf[2] = { pos_select, seg_code };
 	const struct spi_buf tx = { .buf = tx_buf, .len = sizeof(tx_buf) };
 	const struct spi_buf_set tx_set = { .buffers = &tx, .count = 1 };
@@ -328,6 +345,22 @@ int bsp_spi_keypad_scan(int *key_idx, uint8_t raw_bytes[2])
 	}
 
 	if (key_idx != NULL) {
+		/*
+		 * Ánh xạ từ bit dịch 74HC165 (0..15) sang thứ tự phím logic (0..15) theo đúng chữ in lụa
+		 * (Trái -> Phải, Trên -> Dưới) trên mặt bo BKIT ARM4. Do đường mạch đi zíc-zắc (serpentine)
+		 * từ hai cạnh trên/dưới của U16 (R86..R100) và U17 (R87..R101):
+		 *  - Hàng 0 (R86..R92, bit 0..3)   : [1]->0,  [2]->1,  [3]->2,  [▲]->3  (thuận)
+		 *  - Hàng 1 (R94..R100, bit 4..7)  : [▼]->7,  [6]->6,  [5]->5,  [4]->4  (ngược)
+		 *  - Hàng 2 (R87..R93, bit 8..11)  : [7]->8,  [8]->9,  [9]->10, [▶]->11 (thuận)
+		 *  - Hàng 3 (R95..R101, bit 12..15): [◀]->15, [B]->14, [0]->13, [E]->12 (ngược)
+		 */
+		static const uint8_t k_bit_to_logical_key[16] = {
+			0U,  1U,  2U,  3U,
+			7U,  6U,  5U,  4U,
+			8U,  9U,  10U, 11U,
+			15U, 14U, 13U, 12U
+		};
+
 		*key_idx = -1;
 		uint16_t word = (uint16_t)(((uint16_t)rx_buf[0] << 8) | rx_buf[1]);
 
@@ -335,7 +368,7 @@ int bsp_spi_keypad_scan(int *key_idx, uint8_t raw_bytes[2])
 		if (err == 0 && word != 0xFFFFU && word != 0x0000U) {
 			for (int bit = 0; bit < 16; bit++) {
 				if ((word & BIT(bit)) == 0U) {
-					*key_idx = bit;
+					*key_idx = (int)k_bit_to_logical_key[bit];
 					break;
 				}
 			}
