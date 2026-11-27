@@ -1,20 +1,17 @@
 """
 twin_serial.py - Quản lý kết nối UART RS232, giải mã $TWIN JSON & Xuất dữ liệu CSV.
 
-Chức năng tổng quát của file:
-  1. Luồng nền `_reader_loop()` đọc Serial không làm đơ (freeze) giao diện Tkinter.
-  2. Tách dòng telemetry `$TWIN,{...}` đưa vào `telemetry_queue`, còn log chữ từ Zephyr Shell
-     đưa vào `shell_queue` giúp theo dõi trực tiếp phản hồi CLI ngay trên PC Twin.
-
-Các hàm / phương thức quan trọng nhất trong file:
-  - `SerialBridge.connect()`     : Mở cổng COM RS232 ở tốc độ 115200 bps và khởi chạy luồng đọc nền.
-  - `SerialBridge.send_command()`: Gửi lệnh điều khiển Zephyr Shell (`elev ...` / `bkit ...`) xuống bo mạch BKIT.
-  - `SerialBridge._reader_loop()`: Vòng lặp đọc UART liên tục, bóc tách JSON `$TWIN` và lưu lịch sử bản ghi.
-  - `SerialBridge.export_csv()`  : Xuất toàn bộ lịch sử dữ liệu telemetry thu được ra file `.csv` phục vụ báo cáo.
+Đặc biệt tích hợp lớp dự phòng `_Win32RawSerial` (Win32 API trực tiếp qua `ctypes`) giúp:
+  - Vượt qua lỗi kinh điển `PermissionError(13, 'A device attached to the system is not functioning.', None, 31)`
+    của driver Windows 11 `CH340 v3.8/v3.9` trên cáp USB-to-RS232 HL-340 mà KHÔNG cần hạ cấp driver.
+  - Tự động dò tìm cổng USB-SERIAL `CH340` đang cắm thực tế (ví dụ tự chuyển `COM3` -> `COM5` khi đổi lỗ USB).
 """
 
 import csv
+import ctypes
+from ctypes import wintypes
 import json
+import os
 import queue
 import re
 import threading
@@ -34,6 +31,165 @@ except ImportError:
 from twin_config import HIL_SMOKE_STEPS
 
 
+class _DCB(ctypes.Structure):
+    _fields_ = [
+        ("DCBlength", wintypes.DWORD),
+        ("BaudRate", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("wReserved", wintypes.WORD),
+        ("XonLim", wintypes.WORD),
+        ("XoffLim", wintypes.WORD),
+        ("ByteSize", wintypes.BYTE),
+        ("Parity", wintypes.BYTE),
+        ("StopBits", wintypes.BYTE),
+        ("XonChar", ctypes.c_char),
+        ("XoffChar", ctypes.c_char),
+        ("ErrorChar", ctypes.c_char),
+        ("EofChar", ctypes.c_char),
+        ("EvtChar", ctypes.c_char),
+        ("wReserved1", wintypes.WORD),
+    ]
+
+
+class _COMMTIMEOUTS(ctypes.Structure):
+    _fields_ = [
+        ("ReadIntervalTimeout", wintypes.DWORD),
+        ("ReadTotalTimeoutMultiplier", wintypes.DWORD),
+        ("ReadTotalTimeoutConstant", wintypes.DWORD),
+        ("WriteTotalTimeoutMultiplier", wintypes.DWORD),
+        ("WriteTotalTimeoutConstant", wintypes.DWORD),
+    ]
+
+
+class _COMSTAT(ctypes.Structure):
+    _fields_ = [
+        ("flags", wintypes.DWORD),
+        ("cbInQue", wintypes.DWORD),
+        ("cbOutQue", wintypes.DWORD),
+    ]
+
+
+class _Win32RawSerial:
+    """
+    Trình điều khiển Win32 Serial trực tiếp cho cáp CH340 trên Windows 11:
+    Driver CH340 v3.8/v3.9 vẫn ghi đúng thanh ghi tốc độ Baud (115200 8N1) xuống chip nhưng trả mã
+    cảnh báo WinError 31 ở cuối hàm SetCommState khiến pyserial tự đóng cổng. Lớp này giữ nguyên handle
+    hợp lệ và dùng ClearCommError (không chặn) để đọc/ghi song công mượt mà 100%.
+    """
+
+    GENERIC_READ_WRITE = 0xC0000000
+    OPEN_EXISTING = 3
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    def __init__(self, port: str, baud: int = 115200) -> None:
+        if os.name != "nt":
+            raise RuntimeError("Win32RawSerial chỉ hỗ trợ trên hệ điều hành Windows")
+
+        self._k32 = ctypes.windll.kernel32
+        self._io_lock = threading.Lock()
+        self._rx_buf = bytearray()
+
+        dev_path = port if port.startswith("\\\\.\\") else f"\\\\.\\{port}"
+        h = self._k32.CreateFileW(
+            dev_path,
+            self.GENERIC_READ_WRITE,
+            0,
+            None,
+            self.OPEN_EXISTING,
+            0,
+            None,
+        )
+        if h == -1 or h == self.INVALID_HANDLE_VALUE:
+            err = ctypes.GetLastError()
+            raise OSError(f"Không mở được {port} (WinError {err}). Kiểm tra cáp USB-RS232 hoặc tắt PuTTY!")
+
+        self._handle = h
+
+        dcb = _DCB()
+        dcb.DCBlength = ctypes.sizeof(_DCB)
+        self._k32.GetCommState(self._handle, ctypes.byref(dcb))
+        dcb.BaudRate = baud
+        dcb.ByteSize = 8
+        dcb.Parity = 0
+        dcb.StopBits = 0
+        dcb.flags = 0x0001  # fBinary = 1, tắt flow control cứng để tránh treo đường RS232 3 dây
+        # Bỏ qua mã trả về WinError 31 giả của CH340 v3.8/v3.9 (thanh ghi 115200 đã được nạp thành công)
+        self._k32.SetCommState(self._handle, ctypes.byref(dcb))
+
+        timeouts = _COMMTIMEOUTS(10, 0, 40, 0, 250)
+        self._k32.SetCommTimeouts(self._handle, ctypes.byref(timeouts))
+        self._k32.PurgeComm(self._handle, 0x000C)
+
+    def reset_input_buffer(self) -> None:
+        with self._io_lock:
+            self._rx_buf.clear()
+            if self._handle is not None:
+                self._k32.PurgeComm(self._handle, 0x0008)
+
+    def write(self, data: bytes) -> int:
+        if not data or self._handle is None:
+            return 0
+        written = wintypes.DWORD(0)
+        with self._io_lock:
+            if self._handle is None:
+                return 0
+            ok = self._k32.WriteFile(self._handle, data, len(data), ctypes.byref(written), None)
+            if not ok:
+                raise OSError(f"Lỗi ghi UART (WinError {ctypes.GetLastError()})")
+        return int(written.value)
+
+    def flush(self) -> None:
+        pass
+
+    def readline(self) -> bytes:
+        # Nếu trong đệm đã có sẵn ký tự xuống dòng -> trả về ngay lập tức
+        nl_pos = self._rx_buf.find(b"\n")
+        if nl_pos >= 0:
+            line = bytes(self._rx_buf[: nl_pos + 1])
+            del self._rx_buf[: nl_pos + 1]
+            return line
+
+        deadline = time.monotonic() + 0.18
+        while time.monotonic() < deadline:
+            if self._handle is None:
+                return b""
+
+            errs = wintypes.DWORD(0)
+            stat = _COMSTAT()
+            with self._io_lock:
+                if self._handle is None:
+                    return b""
+                ok = self._k32.ClearCommError(self._handle, ctypes.byref(errs), ctypes.byref(stat))
+                if not ok:
+                    raise OSError("Cáp USB-RS232 đã bị rút hoặc mất kết nối")
+                avail = int(stat.cbInQue)
+                if avail > 0:
+                    to_read = min(avail, 1024)
+                    chunk = ctypes.create_string_buffer(to_read)
+                    got = wintypes.DWORD(0)
+                    if self._k32.ReadFile(self._handle, chunk, to_read, ctypes.byref(got), None) and got.value > 0:
+                        self._rx_buf.extend(chunk.raw[: got.value])
+
+            nl_pos = self._rx_buf.find(b"\n")
+            if nl_pos >= 0:
+                line = bytes(self._rx_buf[: nl_pos + 1])
+                del self._rx_buf[: nl_pos + 1]
+                return line
+
+            time.sleep(0.012)
+
+        return b""
+
+    def close(self) -> None:
+        with self._io_lock:
+            if self._handle is not None:
+                try:
+                    self._k32.CloseHandle(self._handle)
+                except Exception:
+                    pass
+                self._handle = None
+
+
 class SerialBridge:
     """Cầu nối truyền thông nối tiếp RS232 giữa PC và bo mạch STM32 Zephyr."""
 
@@ -43,11 +199,12 @@ class SerialBridge:
         self.shell_queue: "queue.Queue[str]" = queue.Queue()
         self.hil_log_rows: List[Dict[str, Any]] = []
 
-        self._ser = None
+        self._ser: Any = None
         self._tx_lock = threading.Lock()
         self._running = False
         self._smoke_running = False
         self.port_name: str = ""
+        self.used_win32_fallback: bool = False
 
     @property
     def is_connected(self) -> bool:
@@ -56,19 +213,49 @@ class SerialBridge:
 
     @staticmethod
     def list_ports() -> List[str]:
-        """Liệt kê danh sách các cổng COM/Serial tìm thấy trên máy tính."""
+        """Liệt kê danh sách các cổng COM/Serial tìm thấy trên máy tính (ưu tiên CH340/USB-Serial lên đầu)."""
         if not HAS_SERIAL:
-            return ["COM3", "COM4"]
-        ports = [p.device for p in serial.tools.list_ports.comports()]
-        return ports or ["COM3"]
+            return ["COM5", "COM3", "COM4"]
+        ports_info = list(serial.tools.list_ports.comports())
+        # Ưu tiên xếp các cổng CH340 / CP210x / FTDI / USB-SERIAL lên đầu danh sách
+        ports_info.sort(
+            key=lambda p: (
+                0 if any(k in (p.description or "").upper() for k in ("CH340", "USB-SERIAL", "CP210", "FTDI")) else 1,
+                p.device,
+            )
+        )
+        ports = [p.device for p in ports_info]
+        return ports or ["COM5"]
 
     def connect(self, port: str, baud: int = 115200) -> None:
-        """Mở kết nối RS232, xóa nhiễu đệm UART và khởi chạy luồng nền đọc dữ liệu từ STM32."""
-        if not HAS_SERIAL:
-            raise RuntimeError("Thiếu thư viện pyserial. Hãy cài bằng lệnh: pip install pyserial")
+        """Mở kết nối RS232 (tự dò cổng CH340 nếu đổi lỗ USB & tự vượt lỗi WinError 31 trên Windows 11)."""
         self.disconnect()
-        self._ser = serial.Serial(port, baud, timeout=0.2, write_timeout=0.5)
-        self.port_name = port
+
+        # Tự động chuyển sang cổng USB-Serial thực tế nếu cổng cũ trên combobox (vd COM3) không còn tồn tại
+        target_port = port.strip()
+        if HAS_SERIAL:
+            live_ports = self.list_ports()
+            raw_devs = [p.device for p in serial.tools.list_ports.comports()]
+            if raw_devs and target_port not in raw_devs:
+                target_port = live_ports[0]
+
+        self.used_win32_fallback = False
+        try:
+            if not HAS_SERIAL:
+                raise RuntimeError("No pyserial")
+            self._ser = serial.Serial(target_port, baud, timeout=0.2, write_timeout=0.5)
+        except Exception as pyser_exc:
+            # Dự phòng tự động sang Win32RawSerial khi gặp lỗi driver CH340 v3.8/v3.9 (WinError 31)
+            if os.name == "nt":
+                try:
+                    self._ser = _Win32RawSerial(target_port, baud)
+                    self.used_win32_fallback = True
+                except Exception:
+                    raise pyser_exc
+            else:
+                raise pyser_exc
+
+        self.port_name = target_port
         self._running = True
         time.sleep(0.06)
         try:
@@ -137,13 +324,17 @@ class SerialBridge:
                         self.record_sample(payload)
                 elif clean != "bkit-elev:~$":
                     self.shell_queue.put(clean)
+            except OSError:
+                # Cáp bị rút vật lý -> thoát vòng lặp êm ái
+                self._running = False
+                self.shell_queue.put("[WARN] Mất kết nối cáp USB-RS232.")
+                break
             except Exception:
                 pass
 
     def record_sample(self, row: Dict[str, Any]) -> None:
         """Lưu bổ sung mẫu telemetry (kể cả khi chạy Offline Simulator) để xuất CSV."""
         self.hil_log_rows.append(dict(row))
-        # Giới hạn bộ đệm RAM tối đa 5000 mẫu gần nhất (~16 phút ở 200 ms/mẫu)
         if len(self.hil_log_rows) > 5000:
             self.hil_log_rows.pop(0)
 

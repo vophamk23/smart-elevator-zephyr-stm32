@@ -66,6 +66,7 @@ typedef struct {
 	bool estop_active;
 	bool overload_active;
 	bool can_fault_active;
+	bool silent_next_open_tone;
 	uint32_t last_obstruct_ms;
 	uint32_t trip_count;
 	uint32_t transition_count;
@@ -128,7 +129,11 @@ static void hsm_transition(hsm_ctx_t *ctx, elevator_state_t next)
 		break;
 	case HSM_STATE_DOOR_OPENING:
 		ctx->door_pos = DOOR_POS_OPENING;
-		bsp_pwm_buzzer_play_tone(BUZZER_TONE_FLOOR_ARRIVE);
+		if (ctx->silent_next_open_tone) {
+			ctx->silent_next_open_tone = false;
+		} else {
+			bsp_pwm_buzzer_play_tone(BUZZER_TONE_FLOOR_ARRIVE);
+		}
 		break;
 	case HSM_STATE_DOOR_OPEN:
 		ctx->door_pos = DOOR_POS_OPEN;
@@ -155,9 +160,9 @@ static void hsm_transition(hsm_ctx_t *ctx, elevator_state_t next)
 		ctx->target_floor = ELEV_MIN_FLOOR;
 		ctx->direction    = ELEV_DIR_IDLE;
 		ctx->scan_dir     = ELEV_DIR_DOWN;
-		/* Nếu cửa đang mở dở trên tầng cao -> nội suy đóng tiếp từ đúng % hiện tại thay vì nhảy về 100% */
+		/* Nếu cửa đang mở dở trên tầng cao -> nội suy đóng nhanh 1.2s từ đúng % hiện tại */
 		if (ctx->current_floor > ELEV_MIN_FLOOR && ctx->door_pos != DOOR_POS_CLOSED) {
-			ctx->phase_elapsed_ms = ((uint32_t)(100U - ctx->door_pct) * ELEV_DOOR_MOVE_MS) / 100U;
+			ctx->phase_elapsed_ms = ((uint32_t)(100U - ctx->door_pct) * ELEV_FIRE_DOOR_CLOSE_MS) / 100U;
 		}
 		bsp_pwm_buzzer_play_tone(BUZZER_TONE_ALARM_SIREN);
 		break;
@@ -213,9 +218,9 @@ static void step_fire_evac_state(hsm_ctx_t *ctx, uint32_t dt_ms)
 
 	if (ctx->door_pos != DOOR_POS_CLOSED) {
 		if (ctx->current_floor > ELEV_MIN_FLOOR) {
-			uint32_t pct  = (ctx->phase_elapsed_ms * 100U) / ELEV_DOOR_MOVE_MS;
+			uint32_t pct  = (ctx->phase_elapsed_ms * 100U) / ELEV_FIRE_DOOR_CLOSE_MS;
 			ctx->door_pct = (pct >= 100U) ? 0U : (uint8_t)(100U - pct);
-			if (ctx->phase_elapsed_ms >= ELEV_DOOR_MOVE_MS) {
+			if (ctx->phase_elapsed_ms >= ELEV_FIRE_DOOR_CLOSE_MS) {
 				ctx->door_pos         = DOOR_POS_CLOSED;
 				ctx->door_pct         = 0U;
 				ctx->phase_elapsed_ms = 0U;
@@ -471,26 +476,57 @@ void elevator_hsm_step(void)
 		}
 		break;
 
-	case EV_DOOR_OBSTRUCT_EXTI:
-		record_exti_latency(&g_hsm, ev.isr_cycles);
+	case EV_DOOR_OBSTRUCT_EXTI: {
+		/*
+		 * ev.param == 0U: Cạnh lên đầu tiên từ cảm biến vật lý (X0 / LDR) -> kêu 1 nhịp chíp 45ms cực ngắn.
+		 * ev.param == 1U: Lệnh test chủ động từ phím [8] hoặc CLI/PC -> mở ngược ngay cả khi đang đỗ đóng kín.
+		 * ev.param == 2U: Duy trì giữ cửa khi tay vẫn đang che LDR/X0 -> TẮT CÒI 100%, không ghi lặp EEPROM.
+		 */
+		bool is_hold_repeat = (ev.param == 2U);
+		bool is_manual_test = (ev.param == 1U);
+
+		if (!is_hold_repeat) {
+			record_exti_latency(&g_hsm, ev.isr_cycles);
+		}
+
 		if (g_hsm.state == HSM_STATE_DOOR_CLOSING) {
-			uint8_t resume_pct     = g_hsm.door_pct;
-			g_hsm.last_obstruct_ms = k_uptime_get_32();
+			uint8_t resume_pct           = g_hsm.door_pct;
+			g_hsm.last_obstruct_ms       = k_uptime_get_32();
 			g_hsm.safety_abort_count++;
+			g_hsm.silent_next_open_tone  = true;
 			hsm_transition(&g_hsm, HSM_STATE_DOOR_OPENING);
-			g_hsm.phase_elapsed_ms = ((uint32_t)resume_pct * ELEV_DOOR_MOVE_MS) / 100U;
-			g_hsm.door_pct         = resume_pct;
-			bsp_pwm_buzzer_play_tone(BUZZER_TONE_DOOR_OBSTRUCT);
-			log_bb   = true;
-			bb_code  = BB_FAULT_DOOR_OBSTRUCT;
-			bb_state = g_hsm.state;
-			bb_floor = g_hsm.current_floor;
+			g_hsm.phase_elapsed_ms       = ((uint32_t)resume_pct * ELEV_DOOR_MOVE_MS) / 100U;
+			g_hsm.door_pct               = resume_pct;
+			if (!is_hold_repeat) {
+				bsp_pwm_buzzer_play_tone(BUZZER_TONE_DOOR_OBSTRUCT);
+				log_bb   = true;
+				bb_code  = BB_FAULT_DOOR_OBSTRUCT;
+				bb_state = g_hsm.state;
+				bb_floor = g_hsm.current_floor;
+			}
 		} else if (g_hsm.state == HSM_STATE_DOOR_OPEN || g_hsm.state == HSM_STATE_DOOR_OPENING) {
 			g_hsm.last_obstruct_ms = k_uptime_get_32();
-			g_hsm.safety_abort_count++;
 			if (g_hsm.state == HSM_STATE_DOOR_OPEN) {
 				g_hsm.phase_elapsed_ms = 0U;
 			}
+			if (!is_hold_repeat) {
+				g_hsm.safety_abort_count++;
+				bsp_pwm_buzzer_play_tone(BUZZER_TONE_DOOR_OBSTRUCT);
+				log_bb   = true;
+				bb_code  = BB_FAULT_DOOR_OBSTRUCT;
+				bb_state = g_hsm.state;
+				bb_floor = g_hsm.current_floor;
+			}
+		} else if (is_manual_test && g_hsm.state == HSM_STATE_IDLE_CLOSED &&
+			   !g_hsm.fire_active && !g_hsm.estop_active) {
+			/* Hỗ trợ bấm phím [8] hoặc nút Obstruct trực tiếp lúc đang đỗ để demo mở ngược từ 35% -> 100% */
+			uint8_t demo_pct             = 35U;
+			g_hsm.last_obstruct_ms       = k_uptime_get_32();
+			g_hsm.safety_abort_count++;
+			g_hsm.silent_next_open_tone  = true;
+			hsm_transition(&g_hsm, HSM_STATE_DOOR_OPENING);
+			g_hsm.phase_elapsed_ms       = ((uint32_t)demo_pct * ELEV_DOOR_MOVE_MS) / 100U;
+			g_hsm.door_pct               = demo_pct;
 			bsp_pwm_buzzer_play_tone(BUZZER_TONE_DOOR_OBSTRUCT);
 			log_bb   = true;
 			bb_code  = BB_FAULT_DOOR_OBSTRUCT;
@@ -498,6 +534,7 @@ void elevator_hsm_step(void)
 			bb_floor = g_hsm.current_floor;
 		}
 		break;
+	}
 
 	case EV_ESTOP_EXTI:
 		record_exti_latency(&g_hsm, ev.isr_cycles);

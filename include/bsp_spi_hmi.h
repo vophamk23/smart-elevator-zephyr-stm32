@@ -34,17 +34,18 @@ int bsp_spi_7seg_write_raw(const uint8_t digits[4]);
 void bsp_spi_7seg_hold_test_pattern(const uint8_t digits[4], uint32_t hold_ms);
 
 /**
- * @brief Hiển thị tầng hiện tại, trạng thái cửa, quá tải, hướng di chuyển và mã lỗi ('FE' / 'Err') lên 4 LED 7 đoạn.
+ * @brief Hiển thị tầng hiện tại, trạng thái cửa ('OP'/'CL'/'Ob'), quá tải, hướng di chuyển và mã lỗi ('FE'/'Err') lên 4 LED 7 đoạn.
  * @param floor      Tầng hiện tại của thang máy (1..7).
  * @param dir        Hướng chạy (LÊN / XUỐNG / DỪNG).
- * @param door_open  true nếu cửa đang mở/đang đóng đón khách ('OP N').
+ * @param door_pos   Trạng thái cửa hiện tại (CLOSED / OPENING / OPEN / CLOSING).
+ * @param obstruct   true nếu đang kích hoạt cảnh báo chống kẹt cửa ('Ob-N').
  * @param overload   true nếu buồng thang đang quá tải >= 800 kg (nhấp nháy 'FULL').
  * @param fire       true nếu đang kích hoạt sơ tán hỏa hoạn ('FE').
  * @param fault      true nếu đang dừng khẩn cấp E-Stop hoặc lỗi mất CAN ('Err').
  * @return 0 nếu hiển thị thành công.
  */
-int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool door_open,
-			       bool overload, bool fire, bool fault);
+int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, door_pos_t door_pos,
+			       bool obstruct, bool overload, bool fire, bool fault);
 
 /**
  * @brief Kéo chốt PD3 (BTN_LOAD) và dịch đọc 16 bit trạng thái ma trận phím 4x4 qua SPI1.

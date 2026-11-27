@@ -20,6 +20,7 @@ from typing import Any, Dict, Tuple
 from twin_canvas import ElevatorShaftCanvas
 from twin_config import (
     COLORS,
+    DOOR_MOVE_MS,
     FONTS,
     MAX_FLOOR,
     MIN_FLOOR,
@@ -137,8 +138,21 @@ class ElevatorTwinWindow:
         )
         ports = self.serial.list_ports()
         self.port_var = tk.StringVar(value=ports[0])
-        self.port_combo = ttk.Combobox(controls, textvariable=self.port_var, values=ports, width=9)
-        self.port_combo.pack(side=tk.LEFT, padx=(0, 6))
+        self.port_combo = ttk.Combobox(controls, textvariable=self.port_var, values=ports, width=8)
+        self.port_combo.pack(side=tk.LEFT, padx=(0, 3))
+
+        tk.Button(
+            controls,
+            text="↻",
+            command=self._refresh_ports,
+            bg=COLORS["btn_idle"],
+            fg=COLORS["text_primary"],
+            font=FONTS["body_bold"],
+            relief="flat",
+            padx=6,
+            pady=4,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=(0, 5))
 
         self.btn_conn = tk.Button(
             controls,
@@ -617,10 +631,15 @@ class ElevatorTwinWindow:
         port = self.port_var.get().strip()
         try:
             self.serial.connect(port, 115200)
+            actual_port = self.serial.port_name or port
+            ports = self.serial.list_ports()
+            self.port_combo["values"] = ports
+            self.port_var.set(actual_port)
             self.live_mode = True
             self.btn_conn.config(text="Ngắt RS232", bg=COLORS["accent_red"])
-            self.mode_badge.config(text=f"● LIVE STM32 ({port})", bg=COLORS["accent_blue"], fg="#082F49")
-            self.append_log("OK", f"Đã kết nối {port} @ 115200 bps và bật luồng $TWIN.")
+            self.mode_badge.config(text=f"● LIVE STM32 ({actual_port})", bg=COLORS["accent_blue"], fg="#082F49")
+            drv_note = " (Win32 CH340 Bypass)" if self.serial.used_win32_fallback else ""
+            self.append_log("OK", f"Đã kết nối {actual_port} @ 115200 bps{drv_note} và bật luồng $TWIN.")
         except Exception as exc:
             self.append_log("ERR", f"Không mở được cổng {port}: {exc}")
 
@@ -763,9 +782,9 @@ class ElevatorTwinWindow:
                 and not int(self.latest_tel.get("estop", 0))
                 and self._live_door_pct < 100.0
             ):
-                self._live_door_pct = min(100.0, self._live_door_pct + (SIM_TICK_MS * 100.0 / 700.0))
+                self._live_door_pct = min(100.0, self._live_door_pct + (SIM_TICK_MS * 100.0 / float(DOOR_MOVE_MS)))
             elif live_st == "DOOR_CLOSING" or (live_st == "FIRE_EVAC" and fl_int > MIN_FLOOR and self._live_door_pct > 0):
-                self._live_door_pct = max(0.0, self._live_door_pct - (SIM_TICK_MS * 100.0 / 700.0))
+                self._live_door_pct = max(0.0, self._live_door_pct - (SIM_TICK_MS * 100.0 / float(DOOR_MOVE_MS)))
             self.latest_tel["door"] = int(round(self._live_door_pct))
 
             # Đồng bộ ngược 2 chiều: khi xoay VR1 / hơ LM35 / bấm phím trên mạch, thanh kéo trên PC tự chạy theo!

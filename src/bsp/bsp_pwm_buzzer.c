@@ -81,8 +81,8 @@ struct buzzer_tone_cfg {
 
 static const struct buzzer_tone_cfg k_tone_table[] = {
 	[BUZZER_TONE_BOOT]          = { 1800U,  80U },
-	[BUZZER_TONE_FLOOR_ARRIVE]  = { 2200U, 100U },
-	[BUZZER_TONE_DOOR_OBSTRUCT] = { 2800U, 250U },
+	[BUZZER_TONE_FLOOR_ARRIVE]  = { 2200U,  90U },
+	[BUZZER_TONE_DOOR_OBSTRUCT] = { 2000U,  45U }, /* 1 tiếng bíp nhẹ 45ms cực ngắn khi kẹt cửa */
 	[BUZZER_TONE_OVERLOAD]      = { 1500U, 160U },
 	[BUZZER_TONE_ALARM_SIREN]   = { 3000U, 400U },
 };

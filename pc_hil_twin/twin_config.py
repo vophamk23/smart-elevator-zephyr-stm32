@@ -19,8 +19,8 @@ NUM_FLOORS: int = 7
 SIM_TICK_MS: int = 50            # Nhịp cập nhật mô phỏng & hoạt ảnh canvas (20 FPS)
 UI_REFRESH_MS: int = 50          # Chu kỳ làm mới giao diện Tkinter
 TRAVEL_FLOOR_MS: int = 1500      # Thời gian cabin di chuyển hết 1 tầng (1.5 giây)
-DOOR_MOVE_MS: int = 700          # Thời gian đóng hoặc mở hết cánh cửa
-DOOR_HOLD_MS: int = 1800         # Thời gian giữ cửa mở để khách ra vào
+DOOR_MOVE_MS: int = 3500         # Thời gian đóng hoặc mở hết cánh cửa (3.5 giây)
+DOOR_HOLD_MS: int = 3500         # Thời gian giữ cửa mở để khách ra vào (3.5 giây)
 CAN_TIMEOUT_MS: int = 2000       # Ngưỡng đứt dây CAN kích hoạt FAIL_SAFE (2 giây)
 
 # Ngưỡng cảm biến an toàn

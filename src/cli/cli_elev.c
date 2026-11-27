@@ -150,6 +150,7 @@ static int cmd_elev_door(const struct shell *sh, size_t argc, char **argv)
 		ev.type = EV_CMD_CLOSE_DOOR;
 	} else if (strcmp(argv[1], "obstruct") == 0) {
 		ev.type = EV_DOOR_OBSTRUCT_EXTI; /* Giả lập ngắt kẹt cửa X0 */
+		ev.param = 1U;
 	} else {
 		shell_error(sh, "Unknown door subcommand: %s", argv[1]);
 		return -EINVAL;

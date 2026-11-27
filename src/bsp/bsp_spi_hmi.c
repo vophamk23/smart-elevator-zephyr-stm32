@@ -56,6 +56,8 @@ static const uint8_t seg7_pos_lut[4] = {
 };
 
 #define SEG7_BLANK      0xFFU
+#define SEG7_CHAR_B     0xC1U   /* Chữ 'b' thường: đoạn c,d,e,f,g sáng */
+#define SEG7_CHAR_C     0x63U   /* Chữ 'C' hoa: đoạn a,d,e,f sáng */
 #define SEG7_CHAR_E     0x61U
 #define SEG7_CHAR_F     0x71U
 #define SEG7_CHAR_L     0xE3U
@@ -235,13 +237,15 @@ void bsp_spi_7seg_hold_test_pattern(const uint8_t digits[4], uint32_t hold_ms)
  *        - Báo cháy (`fire`)         -> "FE_4" (đang hạ) hoặc nhấp nháy "FE 1" (tại F1)
  *        - Lỗi khẩn (`fault`)        -> "ErrN"
  *        - Quá tải (`overload`)      -> Nhấp nháy "FULL" mỗi 250 ms
+ *        - Kẹt cửa (`obstruct`)      -> "Ob-N" <-> "Ob N" rõ nét trong 3.8 giây
  *        - Đang đi LÊN               -> "UP" + vạch cuộn lên + số tầng
  *        - Đang đi XUỐNG             -> "dn" + vạch cuộn xuống + số tầng
- *        - Cửa đang mở/đóng          -> "OP N"
+ *        - Cửa đang ĐÓNG (3.5s)      -> "CL N"
+ *        - Cửa đang MỞ / GIỮ MỞ      -> "OP N"
  *        - Đang đỗ đóng cửa          -> "F- N"
  */
-int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool door_open,
-			       bool overload, bool fire, bool fault)
+int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, door_pos_t door_pos,
+			       bool obstruct, bool overload, bool fire, bool fault)
 {
 	uint32_t now_ms = k_uptime_get_32();
 
@@ -288,6 +292,14 @@ int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool door_open
 		return bsp_spi_7seg_write_raw(digits);
 	}
 
+	if (obstruct) {
+		digits[0] = SEG7_CHAR_O;
+		digits[1] = SEG7_CHAR_B;
+		digits[2] = (((now_ms / 350U) & 1U) == 0U) ? SEG7_CHAR_DASH : SEG7_BLANK;
+		digits[3] = floor_seg;
+		return bsp_spi_7seg_write_raw(digits);
+	}
+
 	if (dir == ELEV_DIR_UP) {
 		digits[0] = SEG7_CHAR_U;
 		digits[1] = SEG7_CHAR_P;
@@ -296,7 +308,11 @@ int bsp_spi_7seg_render_status(uint8_t floor, elevator_dir_t dir, bool door_open
 		digits[0] = SEG7_CHAR_D;
 		digits[1] = SEG7_CHAR_N;
 		digits[2] = seg7_scroll_down[anim_step];
-	} else if (door_open) {
+	} else if (door_pos == DOOR_POS_CLOSING) {
+		digits[0] = SEG7_CHAR_C;
+		digits[1] = SEG7_CHAR_L;
+		digits[2] = SEG7_BLANK;
+	} else if (door_pos != DOOR_POS_CLOSED) {
 		digits[0] = SEG7_CHAR_O;
 		digits[1] = SEG7_CHAR_P;
 		digits[2] = SEG7_BLANK;

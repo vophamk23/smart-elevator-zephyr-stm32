@@ -13,6 +13,7 @@
  */
 
 #include <stdlib.h>
+#include <soc.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/printk.h>
@@ -91,6 +92,8 @@ static void safety_thread_entry(void *p1, void *p2, void *p3)
 	uint8_t ldr_init_cnt = 0U;
 	int32_t ldr_accum_mv = 0;
 	uint32_t ldr_blocked_ticks = 0U;
+	bool prev_curtain_trig = false;
+	uint32_t last_curtain_hold_ms = 0U;
 
 	while (1) {
 		(void)k_sem_take(&g_safety_wakeup_sem, K_FOREVER);
@@ -183,15 +186,34 @@ static void safety_thread_entry(void *p1, void *p2, void *p3)
 				}
 			}
 
-			/* Nếu cửa đang khép mà rèm quang LDR hoặc X0 bị che -> mở cửa ngược lại ngay lập tức! */
-			if ((g_ldr_curtain_blocked || x0) &&
-			    (tel.state == HSM_STATE_DOOR_CLOSING || tel.state == HSM_STATE_DOOR_OPEN)) {
-				elevator_event_t ev = {
-					.type = EV_DOOR_OBSTRUCT_EXTI,
-					.isr_cycles = k_cycle_get_32(),
-				};
-				(void)elevator_hsm_post_event(&ev);
+			/*
+			 * Chống lặp tiếng còi: Chỉ phát sự kiện cạnh lên (param=0) 1 lần duy nhất khi mới che LDR/X0;
+			 * nếu vẫn giữ tay chắn cửa thì mỗi 800 ms gửi gói duy trì im lặng (param=2) để giữ cửa mở.
+			 */
+			bool curtain_active = (g_ldr_curtain_blocked || x0);
+			uint32_t now_curtain = k_uptime_get_32();
+			if (curtain_active &&
+			    (tel.state == HSM_STATE_DOOR_CLOSING ||
+			     tel.state == HSM_STATE_DOOR_OPEN ||
+			     tel.state == HSM_STATE_DOOR_OPENING)) {
+				if (!prev_curtain_trig || tel.state == HSM_STATE_DOOR_CLOSING) {
+					elevator_event_t ev = {
+						.type = EV_DOOR_OBSTRUCT_EXTI,
+						.isr_cycles = k_cycle_get_32(),
+						.param = prev_curtain_trig ? 2U : 0U,
+					};
+					(void)elevator_hsm_post_event(&ev);
+					last_curtain_hold_ms = now_curtain;
+				} else if ((now_curtain - last_curtain_hold_ms) >= 800U) {
+					elevator_event_t ev = {
+						.type = EV_DOOR_OBSTRUCT_EXTI,
+						.param = 2U,
+					};
+					(void)elevator_hsm_post_event(&ev);
+					last_curtain_hold_ms = now_curtain;
+				}
 			}
+			prev_curtain_trig = curtain_active;
 		}
 	}
 }
@@ -275,10 +297,19 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 		node_role_t role = can_bus_get_role();
 		uint8_t disp_floor = tel.current_floor;
 		elevator_dir_t disp_dir = (elevator_dir_t)tel.direction;
-		bool disp_door_open = (tel.door_pos != DOOR_POS_CLOSED);
+		door_pos_t disp_door_pos = (door_pos_t)tel.door_pos;
 		bool disp_overload = tel.overload_active;
 		bool disp_fire = tel.fire_active;
 		bool disp_fault = tel.estop_active || tel.can_fault_active;
+
+		bool x0_now = false;
+		bsp_gpio_read_inputs(&x0_now, NULL, NULL, NULL);
+		bool disp_obstruct = (role == NODE_ROLE_CABIN) &&
+				     (x0_now || g_ldr_curtain_blocked ||
+				      elevator_hsm_is_obstruct_recent(ELEV_OBSTRUCT_ALERT_MS)) &&
+				     (tel.state == HSM_STATE_DOOR_OPENING ||
+				      tel.state == HSM_STATE_DOOR_OPEN ||
+				      tel.state == HSM_STATE_DOOR_CLOSING);
 
 		if (role == NODE_ROLE_HALL) {
 			uint8_t rem_floor = 1U;
@@ -289,7 +320,7 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 			if (can_bus_get_remote_cabin_view(&rem_floor, &rem_dir, &rem_fire, &rem_fault)) {
 				disp_floor = rem_floor;
 				disp_dir = rem_dir;
-				disp_door_open = false;
+				disp_door_pos = DOOR_POS_CLOSED;
 				disp_overload = false;
 				disp_fire = rem_fire;
 				disp_fault = rem_fault || tel.can_fault_active;
@@ -298,8 +329,8 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 
 		/* Cập nhật nội dung bộ đệm 4 LED 7 đoạn mỗi 20 ms (quét phần cứng chạy riêng ở 500 Hz) */
 		if ((tick_div % 2U) == 0U) {
-			(void)bsp_spi_7seg_render_status(disp_floor, disp_dir, disp_door_open,
-							 disp_overload, disp_fire, disp_fault);
+			(void)bsp_spi_7seg_render_status(disp_floor, disp_dir, disp_door_pos,
+							 disp_obstruct, disp_overload, disp_fire, disp_fault);
 		}
 
 		/* Cập nhật Màn hình màu TFT-LCD 240x320 (ILI9341 - FSMC 16-bit) mỗi 100 ms */
@@ -308,14 +339,10 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 			(void)bsp_adc_read_all(&adc_snap);
 			float load_kg = (float)adc_snap.load_kg;
 			float temp_c = (float)adc_snap.temp_deci_c / 10.0f;
-			bool x0_door = false;
-			bsp_gpio_read_inputs(&x0_door, NULL, NULL, NULL);
-			bool curtain_blocked = x0_door || g_ldr_curtain_blocked ||
-					       elevator_hsm_is_obstruct_recent(1400U);
 			uint8_t call_mask = tel.cabin_mask | tel.hall_up_mask | tel.hall_down_mask;
 
 			bsp_tft_lcd_render_dashboard(&tel, call_mask, tel.door_pct,
-						     load_kg, temp_c, curtain_blocked,
+						     load_kg, temp_c, disp_obstruct,
 						     elevator_state_str((elevator_state_t)tel.state));
 		}
 
@@ -373,6 +400,7 @@ static void hmi_thread_entry(void *p1, void *p2, void *p3)
 							elevator_event_t ev = {
 								.type = EV_DOOR_OBSTRUCT_EXTI,
 								.isr_cycles = k_cycle_get_32(),
+								.param = 1U,
 							};
 							(void)elevator_hsm_post_event(&ev);
 						} else if (raw_key == 10) { /* Nút [9]: Giả lập Báo cháy 62°C */
@@ -444,6 +472,12 @@ K_THREAD_DEFINE(t5_wdt,     2048, telemetry_wdt_thread_entry, NULL, NULL, NULL, 
 
 int main(void)
 {
+#if defined(CONFIG_SOC_SERIES_STM32F4X)
+	/* Giữ xung nhịp SWD hoạt động ngay cả khi Zephyr vào WFI Sleep và dừng IWDG khi đang nạp code */
+	DBGMCU->CR |= (DBGMCU_CR_DBG_SLEEP | DBGMCU_CR_DBG_STOP | DBGMCU_CR_DBG_STANDBY);
+	DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;
+#endif
+
 	LOG_INF("Booting HCMUT BKIT ARM4 Smart Elevator Firmware (Zephyr %s)",
 		KERNEL_VERSION_STRING);
 

@@ -51,6 +51,7 @@ static bool g_hdr_drawn;
 static uint8_t g_prev_floor = 0xFFU;
 static uint8_t g_prev_call_mask = 0xFFU;
 static uint8_t g_prev_queue_floor = 0xFFU;
+static bool g_prev_obstruct_ui;
 static uint32_t g_last_render_uptime;
 static uint32_t g_lcd_test_hold_until_ms;
 static bool g_lcd_need_post_test_clear;
@@ -208,6 +209,7 @@ void bsp_tft_lcd_invalidate(void)
 	g_prev_floor = 0xFFU;
 	g_prev_call_mask = 0xFFU;
 	g_prev_queue_floor = 0xFFU;
+	g_prev_obstruct_ui = false;
 }
 
 int bsp_tft_lcd_init(void)
@@ -863,17 +865,31 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 	/* Hàng 7 ô gọi tầng căn giữa (xóa sạch viền xanh tầng cũ theo cả chiều Lên & Xuống) */
 	draw_call_queue_row(128, call_mask, tel->current_floor, mode_changed);
 
-	/* KHỐI 3: CỬA & RÈM QUANG CHỐNG KẸP */
+	/* KHỐI 3: CỬA & RÈM QUANG CHỐNG KẸP (Hiển thị băng rôn Cam/Đỏ cực rõ khi có vật cản) */
 	bool door_reopening_alert = curtain_blocked &&
 				    (tel->state == HSM_STATE_DOOR_OPENING ||
 				     tel->state == HSM_STATE_DOOR_OPEN ||
 				     tel->state == HSM_STATE_DOOR_CLOSING);
 
+	if (door_reopening_alert != g_prev_obstruct_ui || mode_changed) {
+		g_prev_obstruct_ui = door_reopening_alert;
+		if (door_reopening_alert) {
+			bsp_tft_lcd_draw_rect(10, 160, 220, 64, LCD_COLOR_ORANGE);
+			bsp_tft_lcd_draw_rect(11, 161, 218, 62, LCD_COLOR_RED);
+			bsp_tft_lcd_fill_rect(18, 165, 204, 14, LCD_COLOR_ORANGE);
+			lcd_draw_string_padded(24, 168, "!! OBSTACLE -> RE-OPENING !!", 28,
+					       LCD_COLOR_BLACK, LCD_COLOR_ORANGE);
+		} else {
+			bsp_tft_lcd_fill_rect(10, 160, 220, 64, LCD_COLOR_NAVY);
+			bsp_tft_lcd_draw_rect(10, 160, 220, 64, LCD_COLOR_DARK_GRAY);
+		}
+	}
+
 	if (door_reopening_alert) {
-		lcd_draw_string_padded(20, 168, "DOOR: OBSTACLE! RE-OPENING", 28,
-				       LCD_COLOR_ORANGE, LCD_COLOR_NAVY);
 		bsp_tft_lcd_draw_progress_bar(20, 184, 200, 12, door_pct,
 					      LCD_COLOR_ORANGE, LCD_COLOR_DARK_GRAY);
+		snprintf(buf, sizeof(buf), "Light Curtain: BLOCKED [%3u%%]", door_pct);
+		lcd_draw_string_padded(20, 204, buf, 29, LCD_COLOR_RED, LCD_COLOR_NAVY);
 	} else {
 		if (door_pct == 0U) {
 			snprintf(buf, sizeof(buf), "DOOR: CLOSED            [0%%]");
@@ -887,13 +903,7 @@ void bsp_tft_lcd_render_dashboard(const elevator_telemetry_t *tel,
 		lcd_draw_string_padded(20, 168, buf, 28, LCD_COLOR_CYAN, LCD_COLOR_NAVY);
 		bsp_tft_lcd_draw_progress_bar(20, 184, 200, 12, door_pct,
 					      LCD_COLOR_CYAN, LCD_COLOR_DARK_GRAY);
-	}
-
-	if (curtain_blocked) {
-		lcd_draw_string_padded(20, 204, "Light Curtain: BEAM BLOCKED", 28,
-				       LCD_COLOR_RED, LCD_COLOR_NAVY);
-	} else {
-		lcd_draw_string_padded(20, 204, "Light Curtain: CLEAR (SAFE)", 28,
+		lcd_draw_string_padded(20, 204, "Light Curtain: CLEAR (SAFE) ", 29,
 				       LCD_COLOR_GREEN, LCD_COLOR_NAVY);
 	}
 

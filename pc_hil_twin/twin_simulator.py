@@ -151,16 +151,23 @@ class OfflineElevatorSimulator:
                     self._transition("DOOR_CLOSING")
             elif action == "obstruct":
                 self.last_lat_us = 18  # Độ trễ ngắt EXTI danh nghĩa trong mô phỏng
-                self.obstruct_flash_ticks = 14
+                self.obstruct_flash_ticks = 70
                 if self.state == "DOOR_CLOSING":
                     resume_pct = self.door_pct
                     self._transition("DOOR_OPENING")
                     self.phase_elapsed_ms = int((resume_pct * DOOR_MOVE_MS) / 100)
                     self.door_pct = resume_pct
                     self._emit_log("WARN", "Kẹt cửa X0! Đảo chiều mở cửa khẩn cấp.")
-                elif self.state == "DOOR_OPEN":
-                    self.phase_elapsed_ms = 0
+                elif self.state in ("DOOR_OPEN", "DOOR_OPENING"):
+                    if self.state == "DOOR_OPEN":
+                        self.phase_elapsed_ms = 0
                     self._emit_log("WARN", "Kẹt cửa X0 khi đang mở -> Gia hạn thời gian giữ cửa.")
+                elif self.state == "IDLE_CLOSED" and not self.fire_active and not self.estop_active:
+                    demo_pct = 35
+                    self._transition("DOOR_OPENING")
+                    self.phase_elapsed_ms = int((demo_pct * DOOR_MOVE_MS) / 100)
+                    self.door_pct = demo_pct
+                    self._emit_log("WARN", "Mô phỏng kẹt cửa X0 -> Mở ngược từ 35% lên 100%.")
 
         elif sub == "fault" and len(parts) >= 3:
             kind = parts[2]

@@ -17,10 +17,12 @@
 #define ELEV_NUM_FLOORS         7
 
 /* Timing constants (milliseconds) calibrated for real-time demo & HIL verification */
-#define ELEV_TRAVEL_FLOOR_MS    1500U
-#define ELEV_DOOR_MOVE_MS       700U
-#define ELEV_DOOR_HOLD_MS       1800U
-#define ELEV_CAN_HB_PERIOD_MS   250U
+#define ELEV_TRAVEL_FLOOR_MS      1500U
+#define ELEV_DOOR_MOVE_MS         3500U   /* 3.5s để mở hết (0->100%) hoặc đóng hết (100->0%) */
+#define ELEV_DOOR_HOLD_MS         3500U   /* 3.5s giữ cửa mở đón khách tại tầng */
+#define ELEV_FIRE_DOOR_CLOSE_MS   1200U   /* Đóng cửa nhanh 1.2s khi sơ tán hỏa hoạn khẩn cấp */
+#define ELEV_OBSTRUCT_ALERT_MS    3800U   /* Giữ hiển thị cảnh báo Kẹt cửa rõ nét trong 3.8s */
+#define ELEV_CAN_HB_PERIOD_MS     250U
 #define ELEV_CAN_TIMEOUT_MS     2000U
 #define ELEV_WDT_TIMEOUT_MS     2500U
 
